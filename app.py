@@ -110,6 +110,7 @@ with tab_predict:
     st.subheader("🧮 Predict Farmer Creditworthiness")
     st.sidebar.header("Input Farmer Details")
 
+    # --- Demographic and Basic Inputs ---
     crop = st.sidebar.selectbox("Crop Type", sorted(data["Crop Type"].unique()))
     gender = st.sidebar.selectbox("Gender", ["Male", "Female"])
     farm_size = st.sidebar.number_input("Farm Size (hectares)", 0.1, 100.0, 3.0)
@@ -117,13 +118,32 @@ with tab_predict:
     age = st.sidebar.slider("Age", 18, 90, 40)
     coop = st.sidebar.selectbox("Cooperative Membership", ["Yes", "No"])
 
+    # --- Risk Factor Features ---
+    aez = st.sidebar.selectbox("Agro-Ecological Zone Compatibility", ["High", "Moderate", "Low"])
+    pest = st.sidebar.selectbox("Pest & Disease Vulnerability", ["Low", "Moderate", "High"])
+    water = st.sidebar.selectbox("Water & Irrigation Reliability", ["High", "Moderate", "Low"])
+    storage = st.sidebar.selectbox("Post-Harvest Storage", ["Yes", "No"])
+    market = st.sidebar.selectbox("Market Access", ["Yes", "No"])
+    planting = st.sidebar.selectbox("Planting/Sowing Time", ["High", "Low"])
+    experience = st.sidebar.selectbox("Farmer Experience", [">9 years", "5-9 years", "1-4 years", "<1 year"])
+    input_access = st.sidebar.selectbox("Input Access and Affordability", ["Yes", "No"])
+
+    # --- Combine All Inputs into One Sample ---
     sample = pd.DataFrame([{
+        'Agro-Ecological Zone Compatibility': aez,
+        'Pest disease vulnerability': pest,
+        'Water irrigation reliability': water,
+        'Post Harvest Storage': storage,
+        'Market Access': market,
+        'Planting/Sowing Time': planting,
+        'Farmer experience': experience,
+        'Cooperative Membership': coop,
+        'Input Access and Affordability': input_access,
         'Crop Type': crop,
         'Gender': gender,
         'Farm size': farm_size,
         'Previous Yield Output (Kgs)': yield_output,
-        'Age': age,
-        'Cooperative Membership': coop
+        'Age': age
     }])
 
     if st.button("🚀 Predict Credit Score"):
