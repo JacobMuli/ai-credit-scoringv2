@@ -1,26 +1,14 @@
-# app.py
-# 🌾 AI Credit Scoring System (Institutional Edition v5.1 Final — SHAP/LIME CPU FIXED VERSION)
-# -------------------------------------------------------------------------------------------
+# 🌾 AI Credit Scoring System (Institutional Edition v5.3 — Full Explainability Stable)
+# ----------------------------------------------------------------------------------
 import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pickle, gzip, io, os, requests
-from fpdf import FPDF
-from PIL import Image
 import plotly.express as px
+from fpdf import FPDF
 from sklearn.metrics import roc_auc_score, confusion_matrix, classification_report
-
-# Explainability libs
-try:
-    import shap
-    from lime.lime_tabular import LimeTabularExplainer
-    os.environ["CUDA_VISIBLE_DEVICES"] = ""  # disable GPU access
-except Exception:
-    shap = None
-    LimeTabularExplainer = None
-    st.warning("⚠️ SHAP/LIME libraries partially unavailable. Some explainability features disabled.")
 
 # -----------------------------------------------------
 # 🌍 PAGE CONFIGURATION
@@ -28,6 +16,18 @@ except Exception:
 st.set_page_config(page_title="🏦 Institutional Credit Scoring Engine", layout="wide")
 st.title("🏦 E-jenga Credit Engine")
 st.caption("Institutional decision-support combining farmer agronomic risk with institutional lending policies.")
+
+# -----------------------------------------------------
+# 🧠 EXPLAINABILITY LIBRARIES (CPU-SAFE)
+# -----------------------------------------------------
+try:
+    os.environ["CUDA_VISIBLE_DEVICES"] = ""  # disable GPU access
+    import shap
+    from lime.lime_tabular import LimeTabularExplainer
+except Exception:
+    shap = None
+    LimeTabularExplainer = None
+    st.warning("⚠️ SHAP or LIME unavailable (torch/CUDA conflict). Explainability will be limited.")
 
 MODEL_PATH = "credit_model.pkl.gz"
 DATA_PATH = "main_harmonized_dataset_final.csv"
@@ -109,14 +109,13 @@ tab_assess, tab_portfolio, tab_dashboard, tab_report = st.tabs([
 ])
 
 # =====================================================
-# TAB 1: RISK & LOAN CALCULATOR
+# TAB 1: FARMER ASSESSMENT + PER-FARMER EXPLAINABILITY
 # =====================================================
 with tab_assess:
     st.subheader("🏦 Institutional Risk Factor & Loan Calculator — Farmer Inputs Included")
 
     st.sidebar.header("Institution Parameters")
     inst_name = st.sidebar.text_input("Institution Name (optional)")
-    logo_file = st.sidebar.file_uploader("Upload Institution Logo (optional)", type=["png", "jpg", "jpeg"])
     alpha = st.sidebar.slider("Risk Sensitivity (α)", 0.1, 1.5, 0.9, 0.01)
     interest_rate = st.sidebar.number_input("Annual Interest Rate (%)", 0.0, 100.0, 16.0, 0.1)
 
@@ -130,8 +129,6 @@ with tab_assess:
     experience = st.sidebar.selectbox("Farmer Experience", [">9 years", "5-9 years", "1-4 years", "<1 year"])
     coop = st.sidebar.selectbox("Cooperative Membership", ["Yes", "No"])
     input_access = st.sidebar.selectbox("Input Access and Affordability", ["Yes", "No"])
-
-    st.sidebar.header("Economic Inputs")
     price = st.sidebar.number_input("Expected Crop Price (KES/kg)", 1.0, 10000.0, 100.0, 0.1)
     yield_output = st.sidebar.number_input("Expected Yield Output (Kgs)", 1, 1000000, 20000)
 
@@ -158,112 +155,101 @@ with tab_assess:
     c2.metric("Projected Revenue (P)", f"KES {projected_revenue:,.0f}")
     c3.metric("Risk Sensitivity (α)", f"{alpha}")
     c4.metric("Interest Rate (I)", f"{interest_rate:.2f}%")
-
     st.success(f"💰 **Recommended Principal Loan (L)** = KES {loan_amount:,.0f}")
     st.info(f"Credit Eligibility: {eligibility}")
 
+    # ===========================
+    # Per-Farmer Explainability
+    # ===========================
+    st.markdown("### 🧾 Local Explainability — Individual Farmer Analysis")
+    try:
+        X_new = pd.DataFrame({
+            "Agro-Ecological Zone Compatibility": [aez],
+            "Pest disease vulnerability": [pest],
+            "Water irrigation reliability": [water],
+            "Post Harvest Storage": [storage],
+            "Market Access": [market],
+            "Planting/Sowing Time": [planting],
+            "Farmer experience": [experience],
+            "Cooperative Membership": [coop],
+            "Input Access and Affordability": [input_access],
+            "Previous Yield Output (Kgs)": [yield_output],
+            "Price": [price],
+            "Projected Revenue": [projected_revenue],
+            "Risk Factor": [risk_factor_calc]
+        })
+
+        X_encoded = pd.get_dummies(X_new).reindex(columns=pd.get_dummies(data).columns, fill_value=0)
+
+        if shap is not None:
+            try:
+                X_trans = pipeline_obj.transform(X_encoded) if pipeline_obj and hasattr(pipeline_obj, "transform") else X_encoded
+                explainer = shap.Explainer(final_estimator, X_trans)
+                shap_values = explainer(X_trans)
+                plt.figure(figsize=(8,3))
+                shap.plots.waterfall(shap_values[0], show=False)
+                st.pyplot(plt.gcf())
+                plt.clf()
+                st.success("✅ SHAP local explanation generated.")
+            except Exception as e:
+                st.warning(f"SHAP local explanation unavailable: {e}")
+
+        if LimeTabularExplainer is not None:
+            try:
+                X_train = pd.get_dummies(data.select_dtypes(include=[np.number])).fillna(0)
+                feature_names = X_train.columns.tolist()
+                lime_explainer = LimeTabularExplainer(
+                    X_train.values,
+                    feature_names=feature_names,
+                    class_names=["LowRisk", "HighRisk"],
+                    discretize_continuous=True)
+                exp = lime_explainer.explain_instance(X_encoded.values[0], model.predict_proba, num_features=10)
+                lime_df = pd.DataFrame(exp.as_list(), columns=["Feature", "Contribution"])
+                st.dataframe(lime_df)
+                st.success("✅ LIME explanation generated.")
+            except Exception as e:
+                st.warning(f"LIME local explanation unavailable: {e}")
+    except Exception as e:
+        st.warning(f"Local explainability failed: {e}")
+
 # =====================================================
-# TAB 2: PORTFOLIO SIMULATION
-# =====================================================
-with tab_portfolio:
-    st.subheader("💰 Institutional Portfolio Simulation")
-
-    alpha_p = st.slider("Institution Risk Sensitivity (α)", 0.1, 1.5, 0.9, 0.01)
-    interest_rate_p = st.number_input("Interest Rate (%)", 0.0, 100.0, 16.0, 0.1)
-    I_p = interest_rate_p / 100
-
-    data["Loan Amount"] = (data["Projected Revenue"] * (1 * alpha_p * data["Risk Factor"])) / (1 + I_p)
-    data["Loan Amount"] = data["Loan Amount"].round(2)
-
-    crop_filter = st.selectbox("Filter by Crop Type", ["All"] + sorted(data["Crop Type"].unique().tolist()))
-    df_sim = data if crop_filter == "All" else data[data["Crop Type"] == crop_filter]
-
-    st.metric("Average Loan per Farmer", f"KES {df_sim['Loan Amount'].mean():,.0f}")
-    st.metric("Total Portfolio Loan", f"KES {df_sim['Loan Amount'].sum():,.0f}")
-
-    st.markdown("### 📊 Loan Distribution by Risk Factor")
-    fig = px.scatter(df_sim, x="Risk Factor", y="Loan Amount", color="Crop Type", size="Loan Amount", title="Loan Amount vs Risk Factor")
-    st.plotly_chart(fig, width='stretch')
-
-    st.download_button("💾 Download Portfolio Data", df_sim.to_csv(index=False).encode("utf-8"), "portfolio_simulation.csv", "text/csv")
-
-# =====================================================
-# TAB 3: MODEL DASHBOARD — FIXED SHAP IMPLEMENTATION
+# TAB 3: GLOBAL EXPLAINABILITY DASHBOARD
 # =====================================================
 with tab_dashboard:
     st.subheader("📊 Model & Dataset Insights Dashboard")
 
-    st.markdown("### 🔍 Dataset Summary Statistics")
-    st.dataframe(data.describe(include='all').transpose())
-
-    st.markdown("### 🔗 Feature Correlation Matrix")
-    numeric_data = data.select_dtypes(include=[np.number])
-    if not numeric_data.empty:
-        fig, ax = plt.subplots(figsize=(8,6))
-        sns.heatmap(numeric_data.corr(), annot=True, cmap='coolwarm', fmt=".2f", ax=ax)
-        st.pyplot(fig)
-    else:
-        st.info("No numerical columns available for correlation heatmap.")
-
-    st.markdown("### 🌾 Feature Importance (Model Explainability) — SHAP CPU SAFE MODE")
-
+    st.markdown("### 🌾 Feature Importance (Global SHAP or Direct Model)")
     try:
-        # If model exposes direct feature importances
         if hasattr(final_estimator, "feature_importances_"):
             importances = final_estimator.feature_importances_
-            features = numeric_data.columns if not numeric_data.empty else [f"Feature {i}" for i in range(len(importances))]
+            features = data.select_dtypes(include=[np.number]).columns
             df_imp = pd.DataFrame({"Feature": features, "Importance": importances}).sort_values("Importance", ascending=False)
-            fig = px.bar(df_imp, x="Importance", y="Feature", orientation="h", title="Direct Feature Importances")
+            fig = px.bar(df_imp, x="Importance", y="Feature", orientation="h", title="Model Feature Importances")
             st.plotly_chart(fig, width='stretch')
         elif shap is not None:
-            # Prepare CPU-safe SHAP computation
-            # Ensure input matches what the model was trained on
-            X = data.copy()
-            # Handle missing values & encoding safely
-            X_num = pd.get_dummies(X.select_dtypes(exclude=["object"])).fillna(0)
-            X_sample = X_num.sample(n=min(100, len(X_num)), random_state=42)
-        
-            # If pipeline exists, transform using its preprocessing steps
-            try:
-                if pipeline_obj is not None and hasattr(pipeline_obj, "transform"):
-                    X_transformed = pipeline_obj.transform(X_sample)
-                    explainer = shap.Explainer(final_estimator, X_transformed)
-                    shap_values = explainer(X_transformed)
-                    feature_names = [f"Feature_{i}" for i in range(X_transformed.shape[1])]
-                else:
-                    explainer = shap.Explainer(model, X_sample)
-                    shap_values = explainer(X_sample)
-                    feature_names = list(X_sample.columns)
-            except Exception as e:
-                st.warning(f"SHAP explainer initialization failed: {e}")
-                shap_values = None
-        
-            # Only plot if shapes match
-            if shap_values is not None and shap_values.values.shape[1] == len(feature_names):
-                mean_abs = np.abs(shap_values.values).mean(axis=0)
-                summary_df = pd.DataFrame({"Feature": feature_names, "Mean|SHAP|": mean_abs})
-                summary_df = summary_df.sort_values("Mean|SHAP|", ascending=False)
-        
-                st.success("✅ SHAP computed successfully with feature alignment.")
-                fig = px.bar(summary_df, x="Mean|SHAP|", y="Feature", orientation="h", title="Top SHAP Feature Importances")
-                st.plotly_chart(fig, width='stretch')
-                st.download_button(
-                    "💾 Download SHAP Importances (CSV)",
-                    summary_df.to_csv(index=False).encode("utf-8"),
-                    "shap_importances.csv",
-                    "text/csv"
-                )
+            X = pd.get_dummies(data.select_dtypes(exclude=["object"])).fillna(0)
+            X_sample = X.sample(n=min(100, len(X)), random_state=42)
+            if pipeline_obj and hasattr(pipeline_obj, "transform"):
+                X_trans = pipeline_obj.transform(X_sample)
+                explainer = shap.Explainer(final_estimator, X_trans)
+                shap_values = explainer(X_trans)
+                feat_names = [f"Feature_{i}" for i in range(X_trans.shape[1])]
             else:
-                st.info("⚠️ SHAP output shape mismatch. Try retraining with consistent features or include preprocessing pipeline.")
+                explainer = shap.Explainer(model, X_sample)
+                shap_values = explainer(X_sample)
+                feat_names = X_sample.columns
+            if shap_values.values.shape[1] == len(feat_names):
+                mean_abs = np.abs(shap_values.values).mean(axis=0)
+                summary_df = pd.DataFrame({"Feature": feat_names, "Mean|SHAP|": mean_abs}).sort_values("Mean|SHAP|", ascending=False)
+                fig = px.bar(summary_df, x="Mean|SHAP|", y="Feature", orientation="h", title="Global SHAP Feature Importances")
+                st.plotly_chart(fig, width='stretch')
+            else:
+                st.warning("⚠️ Feature mismatch due to preprocessing.")
     except Exception as e:
         st.error(f"Explainability error: {e}")
 
-    st.markdown("### 📈 Risk Factor Distribution")
-    fig2 = px.histogram(data, x="Risk Factor", nbins=20, title="Distribution of Computed Risk Factors")
-    st.plotly_chart(fig2, width='stretch')
-
 # =====================================================
-# PDF GENERATION TAB (unchanged)
+# TAB 4: PDF REPORT GENERATOR
 # =====================================================
 with tab_report:
     st.subheader("📄 Generate Institutional Loan Report (PDF)")
@@ -273,9 +259,9 @@ with tab_report:
         pdf.set_font("Arial", size=12)
         pdf.cell(0, 10, txt="Institutional Loan Report", ln=True, align="C")
         pdf.ln(10)
-        pdf.cell(0, 10, txt=f"Total Farmers: {len(data)}", ln=True)
-        pdf.cell(0, 10, txt="Generated via E-jenga Credit Engine", ln=True)
+        pdf.cell(0, 10, txt=f"Institution: {inst_name}", ln=True)
+        pdf.cell(0, 10, txt=f"Risk Factor: {risk_factor_calc}", ln=True)
+        pdf.cell(0, 10, txt=f"Loan Amount: KES {loan_amount:,.0f}", ln=True)
         pdf.output("institutional_loan_report.pdf")
-
         with open("institutional_loan_report.pdf", "rb") as f:
             st.download_button("⬇️ Download Report", f, "institutional_loan_report.pdf")
