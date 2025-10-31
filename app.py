@@ -20,7 +20,7 @@ import plotly.express as px
 # 🌍 PAGE CONFIGURATION
 # -----------------------------------------------------
 st.set_page_config(page_title="🏦 Institutional Credit Scoring Engine", layout="wide")
-st.title("🏦 E-jenga Credit Scoring & Loan Assessment for Financial Institutions")
+st.title("🏦 E-jenga Credit Engine")
 st.caption("Institutional decision-support combining farmer agronomic risk with institutional lending policies.")
 
 MODEL_PATH = "credit_model.pkl.gz"
