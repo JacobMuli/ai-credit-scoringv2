@@ -129,6 +129,30 @@ with tab_assess:
     price = st.sidebar.number_input("Expected Crop Price (KES/kg)", 1.0, 10000.0, 100.0, 0.1)
     yield_output = st.sidebar.number_input("Expected Yield Output (Kgs)", 1, 1000000, 20000)
 
+    # ---------------------------
+    # 💰 COMPUTE AND DISPLAY RESULTS
+    # ---------------------------
+    st.markdown("### 🧮 Computation Summary")
+    
+    # Calculate dynamically
+    projected_revenue = yield_output * price
+    I = interest_rate / 100
+    loan_amount = (projected_revenue * (1 * alpha * risk_factor_calc)) / (1 + I)
+    eligibility = "✅ Eligible for Financing" if risk_factor_calc <= 0.5 else "⚠️ High Risk - Review Required"
+    
+    # Only show if all inputs valid
+    if projected_revenue > 0 and alpha > 0 and interest_rate >= 0:
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Risk Factor (Rₓ)", f"{risk_factor_calc:.3f}")
+        c2.metric("Projected Revenue (P)", f"KES {projected_revenue:,.0f}")
+        c3.metric("Risk Sensitivity (α)", f"{alpha}")
+        c4.metric("Interest Rate (I)", f"{interest_rate:.2f}%")
+    
+        st.success(f"💰 **Recommended Principal Loan (L)** = KES {loan_amount:,.0f}")
+        st.info(f"Credit Eligibility: {eligibility}")
+    else:
+        st.warning("👈 Please input all required values to compute the loan amount.")
+
     # Compute risk factor
     risk_factor_calc = compute_risk_from_row({
         "Agro-Ecological Zone Compatibility": aez,
