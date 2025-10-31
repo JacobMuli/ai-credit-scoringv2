@@ -298,7 +298,12 @@ with tab_dashboard:
         y_true = data["default"]
 
         try:
-            y_pred
+            y_pred = model.predict(X)
+            y_proba = model.predict_proba(X)[:, 1]
+            # ... (existing evaluation, ROC curve, confusion matrix, etc.)
+
+        except Exception as e:
+            st.error(f"Model evaluation failed: {e}")
 
 # =====================================================
 # TAB 4: ABOUT PROJECT (UPDATED FROM README)
