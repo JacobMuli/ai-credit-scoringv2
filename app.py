@@ -215,8 +215,9 @@ with tab_predict:
     
     # output buffer
     pdf_buffer = io.BytesIO()
-    pdf.output(pdf_buffer)
+    pdf.output(name=pdf_buffer, dest='S')  # return PDF as bytes
     pdf_buffer.seek(0)
+
     
     st.download_button(
         label="💾 Download Farmer Report as PDF",
