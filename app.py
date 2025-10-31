@@ -263,8 +263,8 @@ with tab_report:
         pdf.ln(10)
         pdf.cell(0, 10, txt=f"Institution: {inst_name}", ln=True)
         pdf.cell(0, 10, txt=f"Risk Sensitivity (α): {alpha}", ln=True)
-        pdf.cell(0, 10, txt=f"Interest Rate (I): {interest_rate}%", ln=True)
-        pdf.cell(0, 10, txt=f"Risk Factor (Rₓ): {risk_factor_calc}", ln=True)
+        pdf.cell(0, 10, txt=f"Risk Sensitivity (alpha): {alpha}", ln=True)
+        pdf.cell(0, 10, txt=f"Risk Factor (Rx): {risk_factor_calc}", ln=True)
         pdf.cell(0, 10, txt=f"Loan Amount: KES {loan_amount:,.0f}", ln=True)
         pdf.output("institutional_loan_report.pdf")
         with open("institutional_loan_report.pdf", "rb") as f:
