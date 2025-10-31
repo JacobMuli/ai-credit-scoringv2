@@ -95,12 +95,26 @@ data = normalize_values(data)
 st.caption(f"📁 Using model from branch: `{detect_github_branch()}`")
 
 # -----------------------------------------------------
+# 🌍 SUMMARY DASHBOARD
+# -----------------------------------------------------
+st.markdown("### 📊 Dataset Overview Dashboard")
+total_farmers = len(data)
+avg_risk = data["Risk Factor"].mean().round(3)
+total_projected_loan = (data["Previous Yield Output (Kgs)"] * data["Price"] * (1 - data["Risk Factor"])).sum()
+
+colA, colB, colC = st.columns(3)
+colA.metric("Total Farmers", f"{total_farmers}")
+colB.metric("Average Risk Factor", f"{avg_risk}")
+colC.metric("Total Projected Loan (KES)", f"{total_projected_loan:,.0f}")
+
+# -----------------------------------------------------
 # 🧭 TABS
 # -----------------------------------------------------
-tab_predict, tab_financing, tab_dashboard = st.tabs([
+tab_predict, tab_financing, tab_dashboard, tab_about = st.tabs([
     "🧾 Risk Factor & Financing Analysis",
     "💰 Financing & Loan Simulation",
-    "📊 Model Performance Dashboard"
+    "📊 Model Performance Dashboard",
+    "ℹ️ About Project"
 ])
 
 # =====================================================
@@ -175,14 +189,6 @@ with tab_predict:
         }
     ))
     st.plotly_chart(fig, use_container_width=True)
-
-    st.markdown("### 🧮 Calculation Breakdown")
-    st.write(f"""
-    - **Weighted Risk Factor:** Computed using the official weights from the Risk Factor Formula.
-    - **Projected Revenue:** Expected Yield × Expected Price = {yield_output:,.0f} × {price} = {projected_revenue:,.0f} KES
-    - **Loan Amount Formula:** Projected Revenue × (1 – Risk Factor) = {projected_revenue:,.0f} × (1 – {risk_factor}) = {loan_amount:,.0f} KES
-    - **Eligibility:** Determined by Risk Factor threshold (≤ 0.5 = Eligible)
-    """)
 
 # =====================================================
 # TAB 2: FINANCING SIMULATION (UPDATED)
@@ -292,7 +298,62 @@ with tab_dashboard:
         y_true = data["default"]
 
         try:
-            y_pred = model.predict(X)
-            y_proba = model.predict_proba(X)[:, 1]
+            y_pred
 
-            from sklearn.metrics import classification_report, accuracy
+# =====================================================
+# TAB 4: ABOUT PROJECT (UPDATED FROM README)
+# =====================================================
+with tab_about:
+    st.subheader("ℹ️ About the AI Credit Scoring Project")
+
+    st.markdown("""
+    ### 🌾 Overview
+    The **AI Credit Scoring for Smallholder Farmers** system is designed to bridge the financing gap in agriculture by leveraging data-driven risk analysis. Built as part of the **Intro to AI 4 Startups Hackathon**, the project integrates machine learning, risk weighting, and financial simulation to make lending decisions more inclusive and explainable.
+
+    ### 📘 Dataset: Harmonized Risk & Financing Data
+    This version uses the **Harmonized Agricultural Risk Dataset (2025)**, a combined and cleaned dataset merging both farmer demographic and environmental risk factors. Each record includes quantitative and qualitative metrics such as:
+    - Agro-Ecological Zone (AEZ) Compatibility
+    - Pest & Disease Vulnerability
+    - Water & Irrigation Reliability
+    - Post-Harvest Storage Availability
+    - Market Access
+    - Farmer Experience and Cooperative Membership
+    - Input Access and Affordability
+
+    These metrics are normalized and weighted into a single **Risk Factor (0–1)**, representing the likelihood of default. A lower score means lower risk and higher financing eligibility.
+
+    ### 🧠 Model & Analytics
+    The AI model (Random Forest) was trained using features from the harmonized dataset. It predicts the probability of default, validated using metrics like **ROC-AUC**, **confusion matrix**, and **classification accuracy**.
+
+    Beyond predictive analytics, the application also computes:
+    - **Weighted Risk Factor per farmer**
+    - **Projected Revenue (Yield × Price)**
+    - **Loan Recommendation** = Projected Revenue × (1 – Risk Factor)
+
+    ### 💡 Key Features
+    - **Interactive Risk Visualization Gauge**: Provides a real-time view of an individual farmer’s risk factor.
+    - **Loan Simulation Dashboard**: Simulates financing scenarios across crops and risk levels.
+    - **Performance Analytics**: Monitors model accuracy, AUC score, and feature importance.
+    - **Report Generator**: Exports a detailed farmer-level PDF including risk and financing calculations.
+
+    ### 🧩 Technology Stack
+    - **Python** (Pandas, NumPy, Scikit-learn, Seaborn, Matplotlib, Plotly, Streamlit)
+    - **FPDF2** for generating downloadable PDF reports
+    - **GitHub & Streamlit Cloud** for version control and web hosting
+
+    ### 👩🏾‍🌾 Impact
+    The system empowers microfinance institutions, cooperatives, and agri-lenders to:
+    - Objectively assess farmer creditworthiness
+    - Simulate lending risk under various environmental and economic factors
+    - Support transparent, data-driven credit allocation in the agricultural sector
+
+    ### 🧭 Future Enhancements
+    - Integration with **satellite-based weather data** for dynamic AEZ updates
+    - Incorporation of **mobile-based farmer feedback** loops
+    - Expansion to regional datasets for cross-country model generalization
+
+    ---
+    **Developed by:** Jacob Mwalugho Muli  
+    **Hackathon:** Intro to AI 4 Startups — Responsible & Inclusive AgriTech Challenge  
+    **Version:** 2.0 (Harmonized Dataset Integration)
+    """)
