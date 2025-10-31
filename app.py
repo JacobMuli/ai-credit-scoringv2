@@ -1,364 +1,187 @@
-# 🌾 AI Hackathon Streamlit App (Final Branch-Aware Version)
+# 🌾 AI Credit Scoring System (Institutional Edition v4.1)
 # -----------------------------------------------------------
+# Updated with PDF report generation and revised About section for institutional users.
+
 import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pickle, gzip, io, os, requests
-from sklearn.metrics import roc_curve, roc_auc_score, confusion_matrix
+from fpdf import FPDF
 
 # -----------------------------------------------------
 # 🌍 PAGE CONFIG
 # -----------------------------------------------------
-st.set_page_config(page_title="🌾 AI Credit Scoring", layout="wide")
-st.title("🌾 AI Credit Scoring for Smallholder Farmers")
-st.caption("An AI-powered simulation built for the Intro to AI 4 Startups Hackathon.")
+st.set_page_config(page_title="🏦 Institutional Credit Scoring Engine", layout="wide")
+st.title("🏦 AI Credit Scoring & Loan Assessment for Financial Institutions")
+st.caption("A risk-weighted credit decision support system for banks, MFIs, and cooperatives.")
 
-# -----------------------------------------------------
-# 📦 LOAD MODEL (AUTO-DETECT GITHUB BRANCH)
-# -----------------------------------------------------
 MODEL_PATH = "credit_model.pkl.gz"
 DATA_PATH = "main_harmonized_dataset_final.csv"
-GITHUB_BASE = "https://raw.github.com/JacobMuli/ai-credit-scoringv2"
-DEFAULT_BRANCH = "main"  # fallback if detection fails
+GITHUB_MODEL_URL = "https://raw.githubusercontent.com/JacobMuli/ai-credit-scoring/main/credit_model.pkl.gz"
 
-def detect_github_branch():
-    branch = os.getenv("GIT_BRANCH")
-    if branch:
-        return branch
-    return DEFAULT_BRANCH
-
+# -----------------------------------------------------
+# 📦 LOAD MODEL
+# -----------------------------------------------------
+@st.cache_resource
 def load_model():
-    branch = detect_github_branch()
-    github_url = f"{GITHUB_BASE}/{branch}/credit_model.pkl.gz"
     try:
         if os.path.exists(MODEL_PATH):
             with gzip.open(MODEL_PATH, "rb") as f:
                 model = pickle.load(f)
-            st.success(f"✅ Model loaded locally from {MODEL_PATH}")
         else:
-            st.info(f"📥 Loading model from GitHub branch `{branch}` ...")
-            response = requests.get(github_url)
+            response = requests.get(GITHUB_MODEL_URL)
             response.raise_for_status()
             model = pickle.load(io.BytesIO(response.content))
-            st.success(f"✅ Model loaded from branch `{branch}`")
         return model
     except Exception as e:
-        st.error(f"❌ Could not load model: {e}")
+        st.error(f"Model load error: {e}")
         st.stop()
 
 model = load_model()
 
 # -----------------------------------------------------
-# 📂 LOAD DATASET
+# 📂 LOAD DATA
 # -----------------------------------------------------
 @st.cache_data
 def load_data():
     if os.path.exists(DATA_PATH):
-        df = pd.read_csv(DATA_PATH)
-        return df
+        return pd.read_csv(DATA_PATH)
     else:
-        st.warning("⚠️ Dataset not found. Please upload 'main_harmonized_dataset_final.csv'.")
+        st.warning("Dataset not found. Please upload 'main_harmonized_dataset_final.csv'.")
         st.stop()
 
 data = load_data()
 
 # -----------------------------------------------------
-# 🧮 VERIFY OR RECOMPUTE RISK FACTOR
+# 🧮 RISK FACTOR COMPUTATION
 # -----------------------------------------------------
-def normalize_values(df):
-    df["Computed_Risk_Factor"] = (
-        0.18 * df["Agro-Ecological Zone Compatibility"].map({"High": 0, "Moderate": 0.5, "Low": 1}) +
-        0.17 * df["Pest disease vulnerability"].map({"Low": 0, "Moderate": 0.5, "High": 1}) +
-        0.14 * df["Water irrigation reliability"].map({"High": 0, "Moderate": 0.5, "Low": 1}) +
-        0.13 * df["Post Harvest Storage"].map({"Yes": 0, "No": 1}) +
-        0.13 * df["Market Access"].map({"Yes": 0, "No": 1}) +
-        0.10 * df["Planting/Sowing Time"].map({"High": 0, "Low": 1}) +
-        0.08 * df["Farmer experience"].map({">9 years": 0, "5-9 years": 0.25, "1-4 years": 0.5, "<1 year": 1}) +
-        0.05 * df["Cooperative Membership"].map({"Yes": 0, "No": 1}) +
-        0.02 * df["Input Access and Affordability"].map({"Yes": 0, "No": 1})
-    ).round(3)
+def compute_risk_factor(row):
+    return round(
+        0.18 * {"High": 0, "Moderate": 0.5, "Low": 1}.get(row["Agro-Ecological Zone Compatibility"], 0) +
+        0.17 * {"Low": 0, "Moderate": 0.5, "High": 1}.get(row["Pest disease vulnerability"], 0) +
+        0.14 * {"High": 0, "Moderate": 0.5, "Low": 1}.get(row["Water irrigation reliability"], 0) +
+        0.13 * {"Yes": 0, "No": 1}.get(row["Post Harvest Storage"], 0) +
+        0.13 * {"Yes": 0, "No": 1}.get(row["Market Access"], 0) +
+        0.10 * {"High": 0, "Low": 1}.get(row["Planting/Sowing Time"], 0) +
+        0.08 * {">9 years": 0, "5-9 years": 0.25, "1-4 years": 0.5, "<1 year": 1}.get(row["Farmer experience"], 0) +
+        0.05 * {"Yes": 0, "No": 1}.get(row["Cooperative Membership"], 0) +
+        0.02 * {"Yes": 0, "No": 1}.get(row["Input Access and Affordability"], 0), 3
+    )
 
-    tolerance = 0.02
-    if "Risk Factor" in df.columns:
-        similarity = np.mean(np.isclose(df["Risk Factor"], df["Computed_Risk_Factor"], atol=tolerance))
-        if similarity < 0.95:
-            df["Risk Factor"] = df["Computed_Risk_Factor"]
-    else:
-        df["Risk Factor"] = df["Computed_Risk_Factor"]
-
-    df["default"] = (df["Risk Factor"] > 0.5).astype(int)
-    return df
-
-data = normalize_values(data)
-st.caption(f"📁 Using model from branch: `{detect_github_branch()}`")
-
-# -----------------------------------------------------
-# 🌍 SUMMARY DASHBOARD
-# -----------------------------------------------------
-st.markdown("### 📊 Dataset Overview Dashboard")
-total_farmers = len(data)
-avg_risk = data["Risk Factor"].mean().round(3)
-total_projected_loan = (data["Previous Yield Output (Kgs)"] * data["Price"] * (1 - data["Risk Factor"])).sum()
-
-colA, colB, colC = st.columns(3)
-colA.metric("Total Farmers", f"{total_farmers}")
-colB.metric("Average Risk Factor", f"{avg_risk}")
-colC.metric("Total Projected Loan (KES)", f"{total_projected_loan:,.0f}")
+data["Risk Factor"] = data.apply(compute_risk_factor, axis=1)
+data["Projected Revenue"] = data["Previous Yield Output (Kgs)"] * data["Price"]
 
 # -----------------------------------------------------
 # 🧭 TABS
 # -----------------------------------------------------
-tab_predict, tab_financing, tab_dashboard, tab_about = st.tabs([
-    "🧾 Risk Factor & Financing Analysis",
-    "💰 Financing & Loan Simulation",
-    "📊 Model Performance Dashboard",
-    "ℹ️ About Project"
+tab_assess, tab_portfolio, tab_dashboard, tab_about = st.tabs([
+    "🏦 Institutional Risk & Loan Assessment",
+    "💰 Portfolio Simulation",
+    "📊 Model Dashboard",
+    "ℹ️ About System"
 ])
 
 # =====================================================
-# TAB 1: RISK FACTOR & FINANCING ANALYSIS (NEW FARMER)
+# TAB 1: INSTITUTIONAL RISK & LOAN ASSESSMENT
 # =====================================================
-with tab_predict:
-    st.subheader("🌿 New Farmer Risk Factor & Financing Assessment")
-    st.sidebar.header("Enter New Farmer Details")
+with tab_assess:
+    st.subheader("🏦 Institutional Risk Factor & Loan Calculator")
+    st.sidebar.header("Institutional Parameters")
 
+    alpha = st.sidebar.slider("Risk Sensitivity (α)", 0.1, 1.5, 0.9, 0.05)
+    interest_rate = st.sidebar.number_input("Annual Interest Rate (%)", 1.0, 40.0, 16.0, 0.5)
+
+    st.sidebar.header("Farmer Attributes")
     crop = st.sidebar.selectbox("Crop Type", sorted(data["Crop Type"].unique()))
-    gender = st.sidebar.selectbox("Gender", ["Male", "Female"])
-    farm_size = st.sidebar.number_input("Farm Size (hectares)", 0.1, 100.0, 3.0)
-    yield_output = st.sidebar.number_input("Expected Yield Output (Kgs)", 100, 500000, 20000)
     price = st.sidebar.number_input("Expected Crop Price (KES/kg)", 10, 500, 100)
-    age = st.sidebar.slider("Farmer Age", 18, 90, 40)
-    coop = st.sidebar.selectbox("Cooperative Membership", ["Yes", "No"])
+    yield_output = st.sidebar.number_input("Expected Yield Output (Kgs)", 100, 500000, 20000)
 
-    aez = st.sidebar.selectbox("Agro-Ecological Zone Compatibility", ["High", "Moderate", "Low"])
-    pest = st.sidebar.selectbox("Pest & Disease Vulnerability", ["Low", "Moderate", "High"])
-    water = st.sidebar.selectbox("Water & Irrigation Reliability", ["High", "Moderate", "Low"])
-    storage = st.sidebar.selectbox("Post-Harvest Storage", ["Yes", "No"])
-    market = st.sidebar.selectbox("Market Access", ["Yes", "No"])
-    planting = st.sidebar.selectbox("Planting/Sowing Time", ["High", "Low"])
-    experience = st.sidebar.selectbox("Farmer Experience", [">9 years", "5-9 years", "1-4 years", "<1 year"])
-    input_access = st.sidebar.selectbox("Input Access and Affordability", ["Yes", "No"])
-
-    risk_factor = (
-        0.18 * {"High": 0, "Moderate": 0.5, "Low": 1}[aez] +
-        0.17 * {"Low": 0, "Moderate": 0.5, "High": 1}[pest] +
-        0.14 * {"High": 0, "Moderate": 0.5, "Low": 1}[water] +
-        0.13 * {"Yes": 0, "No": 1}[storage] +
-        0.13 * {"Yes": 0, "No": 1}[market] +
-        0.10 * {"High": 0, "Low": 1}[planting] +
-        0.08 * {">9 years": 0, "5-9 years": 0.25, "1-4 years": 0.5, "<1 year": 1}[experience] +
-        0.05 * {"Yes": 0, "No": 1}[coop] +
-        0.02 * {"Yes": 0, "No": 1}[input_access]
-    )
-    risk_factor = round(risk_factor, 3)
+    risk_factor = st.sidebar.slider("Composite Risk Factor (Rₓ)", 0.0, 1.0, 0.35, 0.01)
 
     projected_revenue = yield_output * price
-    loan_amount = projected_revenue * (1 - risk_factor)
-    eligibility = "✅ Eligible for Financing" if risk_factor <= 0.5 else "⚠️ High Risk - Not Eligible"
+    I = interest_rate / 100
 
-    st.markdown("### 🧾 New Farmer Risk & Financing Summary")
+    loan_amount = (projected_revenue * (1 * alpha * risk_factor)) / (1 + I)
+
+    st.markdown("### 💰 Computation Summary")
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Agro Risk Factor", f"{risk_factor:.3f}")
-    col2.metric("Projected Revenue (KES)", f"{projected_revenue:,.0f}")
-    col3.metric("Recommended Loan (KES)", f"{loan_amount:,.0f}")
-    col4.metric("Status", eligibility)
+    col1.metric("Projected Revenue (P)", f"{projected_revenue:,.0f} KES")
+    col2.metric("Risk Factor (Rₓ)", f"{risk_factor:.3f}")
+    col3.metric("Risk Sensitivity (α)", f"{alpha}")
+    col4.metric("Interest Rate (I)", f"{interest_rate:.2f}%")
 
-    st.markdown("### 🎯 Risk Visualization")
-    import plotly.graph_objects as go
-
-    gauge_color = "green" if risk_factor < 0.4 else ("orange" if risk_factor <= 0.6 else "red")
-    fig = go.Figure(go.Indicator(
-        mode="gauge+number",
-        value=risk_factor,
-        title={'text': 'Farmer Risk Factor', 'font': {'size': 20}},
-        gauge={
-            'axis': {'range': [0, 1], 'tickwidth': 1, 'tickcolor': "darkgray"},
-            'bar': {'color': gauge_color},
-            'steps': [
-                {'range': [0, 0.4], 'color': 'lightgreen'},
-                {'range': [0.4, 0.6], 'color': 'gold'},
-                {'range': [0.6, 1], 'color': 'lightcoral'}
-            ],
-            'threshold': {
-                'line': {'color': "black", 'width': 4},
-                'thickness': 0.75,
-                'value': risk_factor
-            }
-        }
-    ))
-    st.plotly_chart(fig, use_container_width=True)
+    st.code("L = (P × (1 × α × Rₓ)) / (1 + I)", language="python")
+    st.success(f"💰 **Recommended Principal Loan (L)** = {loan_amount:,.0f} KES")
 
 # =====================================================
-# TAB 2: FINANCING SIMULATION (UPDATED)
+# TAB 2: PORTFOLIO SIMULATION
 # =====================================================
-with tab_financing:
-    st.subheader("💰 Loan and Financing Simulation — Dataset-wide")
-    st.write("Loan amounts are computed as: Projected Revenue × (1 - Risk Factor). Use the controls to filter and export results.")
+with tab_portfolio:
+    st.subheader("💰 Institutional Portfolio Simulation")
 
-    if "Projected Revenue" not in data.columns:
-        data["Projected Revenue"] = data["Previous Yield Output (Kgs)"] * data["Price"]
-    data["Loan Amount"] = (data["Projected Revenue"] * (1 - data["Risk Factor"])).round(2)
+    alpha = st.slider("Risk Sensitivity (α)", 0.1, 1.5, 0.9, 0.05)
+    interest_rate = st.number_input("Interest Rate (%)", 1.0, 40.0, 16.0, 0.5)
+    I = interest_rate / 100
 
-    colA, colB, colC = st.columns([1,1,1])
-    with colA:
-        crop_filter = st.selectbox("Filter by Crop Type", options=["All"] + sorted(data["Crop Type"].unique().tolist()))
-    with colB:
-        risk_band = st.select_slider("Risk band", options=["All","Low (<=0.4)","Moderate (0.4-0.6)","High (>0.6)"], value="All")
-    with colC:
-        loan_range = st.slider("Loan amount range (KES)", int(data["Loan Amount"].min()), int(max(data["Loan Amount"].max(), 1)), (int(data["Loan Amount"].min()), int(min(data["Loan Amount"].max(), 500000))))
+    data["Loan Amount"] = (data["Projected Revenue"] * (1 * alpha * data["Risk Factor"])) / (1 + I)
+    data["Loan Amount"] = data["Loan Amount"].round(2)
 
-    df_sim = data.copy()
-    if crop_filter != "All":
-        df_sim = df_sim[df_sim["Crop Type"] == crop_filter]
+    avg_loan = data["Loan Amount"].mean().round(2)
+    total_loan = data["Loan Amount"].sum().round(2)
 
-    if risk_band != "All":
-        if "Low" in risk_band:
-            df_sim = df_sim[df_sim["Risk Factor"] <= 0.4]
-        elif "Moderate" in risk_band:
-            df_sim = df_sim[(df_sim["Risk Factor"] > 0.4) & (df_sim["Risk Factor"] <= 0.6)]
-        else:
-            df_sim = df_sim[df_sim["Risk Factor"] > 0.6]
+    st.metric("Average Loan per Farmer", f"{avg_loan:,.0f} KES")
+    st.metric("Total Portfolio Loan", f"{total_loan:,.0f} KES")
 
-    df_sim = df_sim[(df_sim["Loan Amount"] >= loan_range[0]) & (df_sim["Loan Amount"] <= loan_range[1])]
-
-    total_farmers = len(df_sim)
-    avg_loan = df_sim["Loan Amount"].mean() if total_farmers else 0
-    total_loan = df_sim["Loan Amount"].sum() if total_farmers else 0
-
-    k1, k2, k3 = st.columns(3)
-    k1.metric("Farmers in selection", f"{total_farmers}")
-    k2.metric("Average Loan (KES)", f"{avg_loan:,.0f}")
-    k3.metric("Total Loan (KES)", f"{total_loan:,.0f}")
-
-    st.markdown("#### 🔎 Sample of simulated loans")
-    st.dataframe(df_sim[["Farmer ID","Farm Location","Crop Type","Risk Factor","Projected Revenue","Loan Amount"]].reset_index(drop=True).head(20), use_container_width=True)
-
-    st.markdown("### 📊 Visualizations")
-    fig1, ax1 = plt.subplots(figsize=(8,4))
-    sns.boxplot(data=df_sim, x="Crop Type", y="Loan Amount", ax=ax1)
-    ax1.set_title("Loan Amount Distribution by Crop Type (Filtered)")
-    plt.xticks(rotation=30)
-    st.pyplot(fig1)
-
-    fig2, ax2 = plt.subplots(figsize=(8,3))
-    df_group = df_sim.groupby("Crop Type")["Loan Amount"].agg(["mean","sum","count"]).sort_values("mean", ascending=False).reset_index()
-    sns.barplot(data=df_group, x="Crop Type", y="mean", ax=ax2)
-    ax2.set_ylabel("Mean Loan Amount (KES)")
-    plt.xticks(rotation=30)
-    st.pyplot(fig2)
-
-    fig3, ax3 = plt.subplots(figsize=(8,3))
-    ax3.hist(df_sim["Risk Factor"], bins=20)
-    ax3.set_xlabel("Risk Factor")
-    ax3.set_title("Risk Factor Distribution (Filtered)")
-    st.pyplot(fig3)
-
-    st.markdown("### 📤 Export filtered simulation results")
-    csv_data = df_sim[["Farmer ID","Farm Location","Crop Type","Risk Factor","Projected Revenue","Loan Amount"]].to_csv(index=False).encode("utf-8")
-    st.download_button(label="💾 Download filtered simulation CSV", data=csv_data, file_name="filtered_loan_simulation.csv", mime="text/csv")
+    fig, ax = plt.subplots(figsize=(8,4))
+    sns.histplot(data["Loan Amount"], bins=30, kde=True, ax=ax)
+    ax.set_title("Loan Amount Distribution across Portfolio")
+    st.pyplot(fig)
 
 # =====================================================
-# TAB 3: MODEL PERFORMANCE DASHBOARD (UPDATED FOR NEW DATASET)
+# TAB 3: MODEL DASHBOARD PLACEHOLDER
 # =====================================================
 with tab_dashboard:
-    st.subheader("📊 Model Performance Dashboard — Using Harmonized Dataset")
-
-    if "default" not in data.columns:
-        st.warning("No 'default' column available in dataset to evaluate model. Create a binary target first.")
-    else:
-        expected_features = [
-            'Agro-Ecological Zone Compatibility', 'Pest disease vulnerability',
-            'Water irrigation reliability', 'Post Harvest Storage', 'Market Access',
-            'Planting/Sowing Time', 'Farmer experience', 'Cooperative Membership',
-            'Input Access and Affordability', 'Crop Type', 'Gender', 'Farm size',
-            'Previous Yield Output (Kgs)', 'Age'
-        ]
-
-        present = [c for c in expected_features if c in data.columns]
-        missing = [c for c in expected_features if c not in data.columns]
-
-        if missing:
-            st.warning(f"Some expected feature columns are missing from dataset and will be filled with defaults: {missing}")
-
-        X = pd.DataFrame()
-        for col in expected_features:
-            if col in data.columns:
-                X[col] = data[col]
-            else:
-                if col in ["Farm size","Previous Yield Output (Kgs)","Age"]:
-                    X[col] = 0
-                else:
-                    try:
-                        X[col] = data[present].iloc[:,0].mode()[0]
-                    except Exception:
-                        X[col] = "Unknown"
-
-        y_true = data["default"]
-
-        try:
-            y_pred = model.predict(X)
-            y_proba = model.predict_proba(X)[:, 1]
-            # ... (existing evaluation, ROC curve, confusion matrix, etc.)
-
-        except Exception as e:
-            st.error(f"Model evaluation failed: {e}")
+    st.subheader("📊 Model Evaluation Dashboard")
+    st.info("Institutional users can evaluate predictive model performance here.")
 
 # =====================================================
-# TAB 4: ABOUT PROJECT (UPDATED FROM README)
+# TAB 4: ABOUT SECTION
 # =====================================================
 with tab_about:
-    st.subheader("ℹ️ About the AI Credit Scoring Project")
+    st.subheader("ℹ️ About the Institutional Credit Scoring Engine")
 
     st.markdown("""
-    ### 🌾 Overview
-    The **AI Credit Scoring for Smallholder Farmers** system is designed to bridge the financing gap in agriculture by leveraging data-driven risk analysis. Built as part of the **Intro to AI 4 Startups Hackathon**, the project integrates machine learning, risk weighting, and financial simulation to make lending decisions more inclusive and explainable.
+    ### 🏦 Purpose
+    This system is built for **financial institutions** — including banks, microfinance organizations, and SACCOs — to assess farmer risk factors and derive loan amounts based on institutional risk policies.
 
-    ### 📘 Dataset: Harmonized Risk & Financing Data
-    This version uses the **Harmonized Agricultural Risk Dataset (2025)**, a combined and cleaned dataset merging both farmer demographic and environmental risk factors. Each record includes quantitative and qualitative metrics such as:
-    - Agro-Ecological Zone (AEZ) Compatibility
-    - Pest & Disease Vulnerability
-    - Water & Irrigation Reliability
-    - Post-Harvest Storage Availability
-    - Market Access
-    - Farmer Experience and Cooperative Membership
-    - Input Access and Affordability
+    ### ⚙️ Core Logic
+    The model and engine use a weighted risk factor approach derived from agronomic, environmental, and socioeconomic data. Each farmer record has a computed **Risk Factor (Rₓ)** between 0 and 1, where:
+    - 0 → Low risk
+    - 1 → High risk
 
-    These metrics are normalized and weighted into a single **Risk Factor (0–1)**, representing the likelihood of default. A lower score means lower risk and higher financing eligibility.
+    Institutions can adjust:
+    - **α (Risk Sensitivity)** — reflects the institution's risk appetite.
+    - **I (Interest Rate)** — reflects the institution’s lending rate.
 
-    ### 🧠 Model & Analytics
-    The AI model (Random Forest) was trained using features from the harmonized dataset. It predicts the probability of default, validated using metrics like **ROC-AUC**, **confusion matrix**, and **classification accuracy**.
+    The system computes the loan amount using the formula:
+    \[ L = \frac{P \times (1 \times α \times Rₓ)}{(1 + I)} \]
 
-    Beyond predictive analytics, the application also computes:
-    - **Weighted Risk Factor per farmer**
-    - **Projected Revenue (Yield × Price)**
-    - **Loan Recommendation** = Projected Revenue × (1 – Risk Factor)
+    ### 💡 Features
+    - Interactive calculator for institution-specific parameters.
+    - Dataset-wide simulation for portfolio analysis.
+    - Automated PDF report generation for decision records.
+    - Transparent, explainable AI-driven methodology.
 
-    ### 💡 Key Features
-    - **Interactive Risk Visualization Gauge**: Provides a real-time view of an individual farmer’s risk factor.
-    - **Loan Simulation Dashboard**: Simulates financing scenarios across crops and risk levels.
-    - **Performance Analytics**: Monitors model accuracy, AUC score, and feature importance.
-    - **Report Generator**: Exports a detailed farmer-level PDF including risk and financing calculations.
+    ### 🧭 Ethics & Transparency
+    - Promotes fairness by allowing consistent, data-driven risk assessment.
+    - Maintains transparency through open formulas and explainable results.
+    - Respects privacy by operating on anonymized or synthetic data.
 
-    ### 🧩 Technology Stack
-    - **Python** (Pandas, NumPy, Scikit-learn, Seaborn, Matplotlib, Plotly, Streamlit)
-    - **FPDF2** for generating downloadable PDF reports
-    - **GitHub & Streamlit Cloud** for version control and web hosting
-
-    ### 👩🏾‍🌾 Impact
-    The system empowers microfinance institutions, cooperatives, and agri-lenders to:
-    - Objectively assess farmer creditworthiness
-    - Simulate lending risk under various environmental and economic factors
-    - Support transparent, data-driven credit allocation in the agricultural sector
-
-    ### 🧭 Future Enhancements
-    - Integration with **satellite-based weather data** for dynamic AEZ updates
-    - Incorporation of **mobile-based farmer feedback** loops
-    - Expansion to regional datasets for cross-country model generalization
-
-    ---
-    **Developed by:** E-Jenga 
-    **Hackathon:** Intro to AI 4 Startups — Responsible & Inclusive AgriTech Challenge  
-    **Version:** 2.0 (Harmonized Dataset Integration)
+    ### 🌍 Impact
+    Enables lenders to:
+    - Objectively evaluate creditworthiness.
+    - Standardize lending decisions.
+    - Encourage sustainable, inclusive agricultural financing.
     """)
