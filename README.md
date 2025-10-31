@@ -41,17 +41,6 @@ Final Output	Interactive, explainable dashboard for loan recommendation, portfol
 ├── slides.pdf
 └── slides.pptx
 
-💻 Installation & Setup
-1. Clone Repository
-git clone https://github.com/JacobMuli/ai-credit-scoring.git
-cd ai-credit-scoring
-
-2. Install Dependencies
-pip install -r requirements.txt
-
-3. Run the Streamlit Application
-streamlit run app.py
-
 🧮 Core Formulas
 Composite Risk Factor (Rₓ)
 
