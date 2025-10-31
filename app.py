@@ -20,8 +20,8 @@ st.caption("An AI-powered simulation built for the Intro to AI 4 Startups Hackat
 # -----------------------------------------------------
 MODEL_PATH = "credit_model.pkl.gz"
 DATA_PATH = "main_harmonized_dataset_final.csv"
-GITHUB_BASE = "https://raw.githubusercontent.com/JacobMuli/ai-credit-scoring"
-DEFAULT_BRANCH = "hackathon-update"  # fallback if detection fails
+GITHUB_BASE = "https://raw.github.com/JacobMuli/ai-credit-scoringv2"
+DEFAULT_BRANCH = "main"  # fallback if detection fails
 
 def detect_github_branch():
     branch = os.getenv("GIT_BRANCH")
@@ -104,21 +104,22 @@ tab_predict, tab_financing, tab_dashboard = st.tabs([
 ])
 
 # =====================================================
-# TAB 1: PREDICTION
+# TAB 1: RISK FACTOR & FINANCING ANALYSIS
 # =====================================================
 with tab_predict:
-    st.subheader("🧮 Predict Farmer Creditworthiness")
-    st.sidebar.header("Input Farmer Details")
+    st.subheader("🌿 Risk Factor & Financing Assessment")
+    st.sidebar.header("Farmer Profile Inputs")
 
-    # --- Demographic and Basic Inputs ---
+    # --- User Inputs ---
     crop = st.sidebar.selectbox("Crop Type", sorted(data["Crop Type"].unique()))
     gender = st.sidebar.selectbox("Gender", ["Male", "Female"])
     farm_size = st.sidebar.number_input("Farm Size (hectares)", 0.1, 100.0, 3.0)
     yield_output = st.sidebar.number_input("Previous Yield Output (Kgs)", 100, 500000, 20000)
+    price = st.sidebar.number_input("Crop Price (KES/kg)", 10, 500, 100)
     age = st.sidebar.slider("Age", 18, 90, 40)
     coop = st.sidebar.selectbox("Cooperative Membership", ["Yes", "No"])
 
-    # --- Risk Factor Features ---
+    # --- Risk Inputs ---
     aez = st.sidebar.selectbox("Agro-Ecological Zone Compatibility", ["High", "Moderate", "Low"])
     pest = st.sidebar.selectbox("Pest & Disease Vulnerability", ["Low", "Moderate", "High"])
     water = st.sidebar.selectbox("Water & Irrigation Reliability", ["High", "Moderate", "Low"])
@@ -128,37 +129,41 @@ with tab_predict:
     experience = st.sidebar.selectbox("Farmer Experience", [">9 years", "5-9 years", "1-4 years", "<1 year"])
     input_access = st.sidebar.selectbox("Input Access and Affordability", ["Yes", "No"])
 
-    # --- Combine All Inputs into One Sample ---
-    sample = pd.DataFrame([{
-        'Agro-Ecological Zone Compatibility': aez,
-        'Pest disease vulnerability': pest,
-        'Water irrigation reliability': water,
-        'Post Harvest Storage': storage,
-        'Market Access': market,
-        'Planting/Sowing Time': planting,
-        'Farmer experience': experience,
-        'Cooperative Membership': coop,
-        'Input Access and Affordability': input_access,
-        'Crop Type': crop,
-        'Gender': gender,
-        'Farm size': farm_size,
-        'Previous Yield Output (Kgs)': yield_output,
-        'Age': age
-    }])
+    # --- Compute Risk Factor (Weighted Formula) ---
+    risk_factor = (
+        0.18 * {"High": 0, "Moderate": 0.5, "Low": 1}[aez] +
+        0.17 * {"Low": 0, "Moderate": 0.5, "High": 1}[pest] +
+        0.14 * {"High": 0, "Moderate": 0.5, "Low": 1}[water] +
+        0.13 * {"Yes": 0, "No": 1}[storage] +
+        0.13 * {"Yes": 0, "No": 1}[market] +
+        0.10 * {"High": 0, "Low": 1}[planting] +
+        0.08 * {">9 years": 0, "5-9 years": 0.25, "1-4 years": 0.5, "<1 year": 1}[experience] +
+        0.05 * {"Yes": 0, "No": 1}[coop] +
+        0.02 * {"Yes": 0, "No": 1}[input_access]
+    )
+    risk_factor = round(risk_factor, 3)
 
-    if st.button("🚀 Predict Credit Score"):
-        try:
-            prob_default = model.predict_proba(sample)[0, 1]
-            credit_score = (1 - prob_default) * 1000
-            st.metric("Credit Score", f"{credit_score:.0f}")
-            st.metric("Default Probability", f"{prob_default:.2%}")
+    # --- Financing Calculation ---
+    projected_revenue = yield_output * price
+    loan_amount = projected_revenue * (1 - risk_factor)
+    eligibility = "✅ Eligible for Financing" if risk_factor <= 0.5 else "⚠️ High Risk - Not Eligible"
 
-            if credit_score >= 400:
-                st.success("✅ Farmer is eligible for credit.")
-            else:
-                st.warning("⚠️ High-risk farmer — low credit eligibility.")
-        except Exception as e:
-            st.error(f"Prediction failed: {e}")
+    # --- Display Results ---
+    st.markdown("### 🧾 Farmer Risk & Financing Summary")
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Agro Risk Factor", f"{risk_factor:.3f}")
+    col2.metric("Projected Revenue (KES)", f"{projected_revenue:,.0f}")
+    col3.metric("Recommended Loan (KES)", f"{loan_amount:,.0f}")
+    col4.metric("Status", eligibility)
+
+    # --- Explanation Section ---
+    st.markdown("### 🧮 Calculation Breakdown")
+    st.write(f"""
+    - **Weighted Risk Factor:** Computed using the official weights from the Risk Factor Formula.
+    - **Projected Revenue:** Yield × Price = {yield_output:,.0f} × {price} = {projected_revenue:,.0f} KES
+    - **Loan Amount Formula:** Projected Revenue × (1 – Risk Factor) = {projected_revenue:,.0f} × (1 – {risk_factor}) = {loan_amount:,.0f} KES
+    - **Eligibility:** Determined by Risk Factor threshold (≤ 0.5 = Eligible)
+    """)
 
 # =====================================================
 # TAB 2: FINANCING SIMULATION
