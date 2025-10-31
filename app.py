@@ -358,7 +358,7 @@ with tab_about:
     - Expansion to regional datasets for cross-country model generalization
 
     ---
-    **Developed by:** Jacob Mwalugho Muli  
+    **Developed by:** E-Jenga 
     **Hackathon:** Intro to AI 4 Startups — Responsible & Inclusive AgriTech Challenge  
     **Version:** 2.0 (Harmonized Dataset Integration)
     """)
