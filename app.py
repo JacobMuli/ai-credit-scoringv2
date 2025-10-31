@@ -98,25 +98,25 @@ st.caption(f"📁 Using model from branch: `{detect_github_branch()}`")
 # 🧭 TABS
 # -----------------------------------------------------
 tab_predict, tab_financing, tab_dashboard = st.tabs([
-    "🧾 Predict Farmer Credit Score",
+    "🧾 Risk Factor & Financing Analysis",
     "💰 Financing & Loan Simulation",
     "📊 Model Performance Dashboard"
 ])
 
 # =====================================================
-# TAB 1: RISK FACTOR & FINANCING ANALYSIS
+# TAB 1: RISK FACTOR & FINANCING ANALYSIS (NEW FARMER)
 # =====================================================
 with tab_predict:
-    st.subheader("🌿 Risk Factor & Financing Assessment")
-    st.sidebar.header("Farmer Profile Inputs")
+    st.subheader("🌿 New Farmer Risk Factor & Financing Assessment")
+    st.sidebar.header("Enter New Farmer Details")
 
     # --- User Inputs ---
     crop = st.sidebar.selectbox("Crop Type", sorted(data["Crop Type"].unique()))
     gender = st.sidebar.selectbox("Gender", ["Male", "Female"])
     farm_size = st.sidebar.number_input("Farm Size (hectares)", 0.1, 100.0, 3.0)
-    yield_output = st.sidebar.number_input("Previous Yield Output (Kgs)", 100, 500000, 20000)
-    price = st.sidebar.number_input("Crop Price (KES/kg)", 10, 500, 100)
-    age = st.sidebar.slider("Age", 18, 90, 40)
+    yield_output = st.sidebar.number_input("Expected Yield Output (Kgs)", 100, 500000, 20000)
+    price = st.sidebar.number_input("Expected Crop Price (KES/kg)", 10, 500, 100)
+    age = st.sidebar.slider("Farmer Age", 18, 90, 40)
     coop = st.sidebar.selectbox("Cooperative Membership", ["Yes", "No"])
 
     # --- Risk Inputs ---
@@ -149,21 +149,76 @@ with tab_predict:
     eligibility = "✅ Eligible for Financing" if risk_factor <= 0.5 else "⚠️ High Risk - Not Eligible"
 
     # --- Display Results ---
-    st.markdown("### 🧾 Farmer Risk & Financing Summary")
+    st.markdown("### 🧾 New Farmer Risk & Financing Summary")
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Agro Risk Factor", f"{risk_factor:.3f}")
     col2.metric("Projected Revenue (KES)", f"{projected_revenue:,.0f}")
     col3.metric("Recommended Loan (KES)", f"{loan_amount:,.0f}")
     col4.metric("Status", eligibility)
 
+    # --- Risk Visualization Gauge ---
+    st.markdown("### 🎯 Risk Visualization")
+    import plotly.graph_objects as go
+
+    gauge_color = "green" if risk_factor < 0.4 else ("orange" if risk_factor <= 0.6 else "red")
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=risk_factor,
+        title={'text': 'Farmer Risk Factor', 'font': {'size': 20}},
+        gauge={
+            'axis': {'range': [0, 1], 'tickwidth': 1, 'tickcolor': "darkgray"},
+            'bar': {'color': gauge_color},
+            'steps': [
+                {'range': [0, 0.4], 'color': 'lightgreen'},
+                {'range': [0.4, 0.6], 'color': 'gold'},
+                {'range': [0.6, 1], 'color': 'lightcoral'}
+            ],
+            'threshold': {
+                'line': {'color': "black", 'width': 4},
+                'thickness': 0.75,
+                'value': risk_factor
+            }
+        }
+    ))
+    st.plotly_chart(fig, use_container_width=True)
+
     # --- Explanation Section ---
     st.markdown("### 🧮 Calculation Breakdown")
     st.write(f"""
     - **Weighted Risk Factor:** Computed using the official weights from the Risk Factor Formula.
-    - **Projected Revenue:** Yield × Price = {yield_output:,.0f} × {price} = {projected_revenue:,.0f} KES
+    - **Projected Revenue:** Expected Yield × Expected Price = {yield_output:,.0f} × {price} = {projected_revenue:,.0f} KES
     - **Loan Amount Formula:** Projected Revenue × (1 – Risk Factor) = {projected_revenue:,.0f} × (1 – {risk_factor}) = {loan_amount:,.0f} KES
     - **Eligibility:** Determined by Risk Factor threshold (≤ 0.5 = Eligible)
     """)
+
+    # --- Save Farmer Report ---
+    st.markdown("### 📥 Save Farmer Report")
+    import io
+    from fpdf import FPDF
+
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    pdf.cell(200, 10, txt="Farmer Risk & Financing Report", ln=True, align='C')
+    pdf.cell(200, 10, txt=f"Crop Type: {crop}", ln=True)
+    pdf.cell(200, 10, txt=f"Gender: {gender}", ln=True)
+    pdf.cell(200, 10, txt=f"Farm Size: {farm_size} hectares", ln=True)
+    pdf.cell(200, 10, txt=f"Expected Yield: {yield_output:,.0f} Kgs", ln=True)
+    pdf.cell(200, 10, txt=f"Expected Price: {price} KES/kg", ln=True)
+    pdf.cell(200, 10, txt=f"Risk Factor: {risk_factor}", ln=True)
+    pdf.cell(200, 10, txt=f"Projected Revenue: {projected_revenue:,.0f} KES", ln=True)
+    pdf.cell(200, 10, txt=f"Recommended Loan: {loan_amount:,.0f} KES", ln=True)
+    pdf.cell(200, 10, txt=f"Eligibility: {eligibility}", ln=True)
+
+    pdf_buffer = io.BytesIO()
+    pdf.output(pdf_buffer)
+
+    st.download_button(
+        label="💾 Download Farmer Report as PDF",
+        data=pdf_buffer.getvalue(),
+        file_name="farmer_risk_financing_report.pdf",
+        mime="application/pdf"
+    )
 
 # =====================================================
 # TAB 2: FINANCING SIMULATION
