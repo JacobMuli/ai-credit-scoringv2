@@ -195,7 +195,7 @@ with tab_predict:
     st.markdown("### 📥 Save Farmer Report")
     import io
     from fpdf import FPDF
-
+    
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", size=12)
@@ -208,17 +208,23 @@ with tab_predict:
     pdf.cell(200, 10, txt=f"Risk Factor: {risk_factor}", ln=True)
     pdf.cell(200, 10, txt=f"Projected Revenue: {projected_revenue:,.0f} KES", ln=True)
     pdf.cell(200, 10, txt=f"Recommended Loan: {loan_amount:,.0f} KES", ln=True)
-    pdf.cell(200, 10, txt=f"Eligibility: {eligibility}", ln=True)
-
+    
+    # remove emojis from eligibility for PDF
+    clean_eligibility = eligibility.replace("✅ ", "").replace("⚠️ ", "")
+    pdf.cell(200, 10, txt=f"Eligibility: {clean_eligibility}", ln=True)
+    
+    # output buffer
     pdf_buffer = io.BytesIO()
     pdf.output(pdf_buffer)
-
+    pdf_buffer.seek(0)
+    
     st.download_button(
         label="💾 Download Farmer Report as PDF",
         data=pdf_buffer.getvalue(),
         file_name="farmer_risk_financing_report.pdf",
         mime="application/pdf"
     )
+
 
 # =====================================================
 # TAB 2: FINANCING SIMULATION
