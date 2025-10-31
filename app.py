@@ -233,8 +233,18 @@ with tab_dashboard:
 
             # SHAP Global
             st.markdown("#### 🔹 SHAP Summary Plot (Global Feature Impact)")
-            explainer = shap.TreeExplainer(model)
+            # Extract the final estimator if the model is a pipeline
+            if hasattr(model, "named_steps"):
+                final_model = list(model.named_steps.values())[-1]
+            elif hasattr(model, "steps"):
+                final_model = model.steps[-1][1]
+            else:
+                final_model = model
+            
+            # Create SHAP explainer for the final model
+            explainer = shap.TreeExplainer(final_model)
             shap_values = explainer.shap_values(X_sample)
+
             fig, ax = plt.subplots()
             shap.summary_plot(shap_values, X_sample, show=False)
             st.pyplot(fig, bbox_inches="tight", dpi=120)
