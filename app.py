@@ -182,32 +182,44 @@ with tab_portfolio:
                        "portfolio_simulation.csv", "text/csv")
 
 # =====================================================
-# TAB 3: MODEL DASHBOARD
+# TAB 3: MODEL DASHBOARD (DESCRIPTIVE ANALYTICS)
 # =====================================================
 with tab_dashboard:
-    st.subheader("📊 Model Performance Dashboard")
-    if "default" in data.columns:
-        try:
-            X = data.drop(columns=["default"], errors="ignore").select_dtypes(include=["number"])
-            y = data["default"]
-            y_pred = model.predict(X)
-            y_proba = model.predict_proba(X)[:, 1]
-            auc = roc_auc_score(y, y_proba)
-            st.metric("ROC-AUC Score", f"{auc:.3f}")
+    st.subheader("📊 Model & Dataset Insights Dashboard")
 
-            # Confusion Matrix
-            cm = confusion_matrix(y, y_pred)
-            st.write("### Confusion Matrix")
-            st.dataframe(pd.DataFrame(cm, columns=["Predicted 0", "Predicted 1"], index=["Actual 0", "Actual 1"]))
+    # Summary statistics
+    st.markdown("### 🔍 Dataset Summary Statistics")
+    st.dataframe(data.describe(include='all').transpose())
 
-            # Classification Report
-            report = classification_report(y, y_pred, output_dict=True)
-            st.write(pd.DataFrame(report).transpose())
-
-        except Exception as e:
-            st.error(f"Error evaluating model: {e}")
+    # Correlation heatmap (numerical)
+    st.markdown("### 🔗 Feature Correlation Matrix")
+    numeric_data = data.select_dtypes(include=[np.number])
+    if not numeric_data.empty:
+        fig, ax = plt.subplots(figsize=(8,6))
+        sns.heatmap(numeric_data.corr(), annot=True, cmap='coolwarm', fmt=".2f", ax=ax)
+        st.pyplot(fig)
     else:
-        st.warning("No 'default' column found — unable to compute model metrics.")
+        st.info("No numerical columns available for correlation heatmap.")
+
+    # Feature importance (from model)
+    st.markdown("### 🌾 Feature Importance (Model Explainability)")
+    try:
+        importances = model.feature_importances_
+        feature_names = getattr(model, 'feature_names_in_', data.select_dtypes(include=[np.number]).columns)
+        importance_df = pd.DataFrame({
+            "Feature": feature_names,
+            "Importance": importances
+        }).sort_values(by="Importance", ascending=False)
+        fig = px.bar(importance_df, x="Importance", y="Feature", orientation='h', title="Feature Importance Ranking")
+        st.plotly_chart(fig, use_container_width=True)
+    except Exception as e:
+        st.warning(f"Feature importance unavailable: {e}")
+
+    # Visualization: Risk Factor distribution
+    st.markdown("### 📈 Risk Factor Distribution")
+    fig2 = px.histogram(data, x="Risk Factor", nbins=20, title="Distribution of Computed Risk Factors")
+    st.plotly_chart(fig2, use_container_width=True)
+
 
 # =====================================================
 # TAB 4: PDF REPORT GENERATOR
