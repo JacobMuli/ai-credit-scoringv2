@@ -1,13 +1,8 @@
-# 🌾 AI Credit Scoring System (Institutional Edition v5.1 Final)
+# 🌾 AI Credit Scoring System (Institutional Edition v5.1 Final — Fixed Version)
 # -----------------------------------------------------------
 # Unified Institutional + Farmer-Level Credit Scoring Engine
 # -----------------------------------------------------------
-# Combines:
-# - Farmer agronomic metrics (AEZ, Pest, Water, Market, etc.)
-# - Institutional parameters (α = Risk Sensitivity, I = Interest Rate)
-# Implements loan formula:
-#   L = (P × (1 × α × Rₓ)) / (1 + I)
-# Generates dynamic risk assessment, portfolio simulation, model dashboard, and PDF reports.
+# Updated to replace deprecated `use_container_width` with `width` parameter.
 # -----------------------------------------------------------
 
 import streamlit as st
@@ -35,7 +30,7 @@ GITHUB_MODEL_URL = "https://raw.githubusercontent.com/JacobMuli/ai-credit-scorin
 # -----------------------------------------------------
 # 📦 LOAD MODEL
 # -----------------------------------------------------
-@st.cache_resource
+@st.cache_resource(show_spinner=False)
 def load_model():
     try:
         if os.path.exists(MODEL_PATH):
@@ -55,7 +50,7 @@ model = load_model()
 # -----------------------------------------------------
 # 📂 LOAD DATA
 # -----------------------------------------------------
-@st.cache_data
+@st.cache_data(show_spinner=False)
 def load_data():
     if os.path.exists(DATA_PATH):
         return pd.read_csv(DATA_PATH)
@@ -81,7 +76,6 @@ def compute_risk_from_row(r):
         0.02 * {"Yes": 0, "No": 1}.get(r.get("Input Access and Affordability", "Yes"), 0), 3
     )
 
-# Add missing computed columns
 if "Risk Factor" not in data.columns:
     data["Risk Factor"] = data.apply(lambda row: compute_risk_from_row(row), axis=1)
 
@@ -125,7 +119,6 @@ with tab_assess:
     price = st.sidebar.number_input("Expected Crop Price (KES/kg)", 1.0, 10000.0, 100.0, 0.1)
     yield_output = st.sidebar.number_input("Expected Yield Output (Kgs)", 1, 1000000, 20000)
 
-    # Compute risk and loan
     risk_factor_calc = compute_risk_from_row({
         "Agro-Ecological Zone Compatibility": aez,
         "Pest disease vulnerability": pest,
@@ -137,6 +130,7 @@ with tab_assess:
         "Cooperative Membership": coop,
         "Input Access and Affordability": input_access
     })
+
     projected_revenue = yield_output * price
     I = interest_rate / 100
     loan_amount = (projected_revenue * (1 * alpha * risk_factor_calc)) / (1 + I)
@@ -165,21 +159,17 @@ with tab_portfolio:
     data["Loan Amount"] = (data["Projected Revenue"] * (1 * alpha_p * data["Risk Factor"])) / (1 + I_p)
     data["Loan Amount"] = data["Loan Amount"].round(2)
 
-    # Filters
     crop_filter = st.selectbox("Filter by Crop Type", ["All"] + sorted(data["Crop Type"].unique().tolist()))
     df_sim = data if crop_filter == "All" else data[data["Crop Type"] == crop_filter]
 
-    # Portfolio metrics
     st.metric("Average Loan per Farmer", f"KES {df_sim['Loan Amount'].mean():,.0f}")
     st.metric("Total Portfolio Loan", f"KES {df_sim['Loan Amount'].sum():,.0f}")
 
     st.markdown("### 📊 Loan Distribution by Risk Factor")
-    fig = px.scatter(df_sim, x="Risk Factor", y="Loan Amount", color="Crop Type", size="Loan Amount",
-                     title="Loan Amount vs Risk Factor")
-    st.plotly_chart(fig, use_container_width=True)
+    fig = px.scatter(df_sim, x="Risk Factor", y="Loan Amount", color="Crop Type", size="Loan Amount", title="Loan Amount vs Risk Factor")
+    st.plotly_chart(fig, width='stretch')
 
-    st.download_button("💾 Download Portfolio Data", df_sim.to_csv(index=False).encode("utf-8"),
-                       "portfolio_simulation.csv", "text/csv")
+    st.download_button("💾 Download Portfolio Data", df_sim.to_csv(index=False).encode("utf-8"), "portfolio_simulation.csv", "text/csv")
 
 # =====================================================
 # TAB 3: MODEL DASHBOARD (DESCRIPTIVE ANALYTICS)
@@ -187,11 +177,9 @@ with tab_portfolio:
 with tab_dashboard:
     st.subheader("📊 Model & Dataset Insights Dashboard")
 
-    # Summary statistics
     st.markdown("### 🔍 Dataset Summary Statistics")
     st.dataframe(data.describe(include='all').transpose())
 
-    # Correlation heatmap (numerical)
     st.markdown("### 🔗 Feature Correlation Matrix")
     numeric_data = data.select_dtypes(include=[np.number])
     if not numeric_data.empty:
@@ -201,54 +189,34 @@ with tab_dashboard:
     else:
         st.info("No numerical columns available for correlation heatmap.")
 
-    # -----------------------------------------------------
-    # 🌾 Feature Importance (works with Pipeline models)
-    # -----------------------------------------------------
     st.markdown("### 🌾 Feature Importance (Model Explainability)")
-    
     try:
-        # If model is a pipeline, extract the final estimator
         if hasattr(model, "named_steps"):
             final_estimator = list(model.named_steps.values())[-1]
         elif hasattr(model, "steps"):
             final_estimator = model.steps[-1][1]
         else:
             final_estimator = model
-    
-        # Ensure final estimator supports feature_importances_
+
         if hasattr(final_estimator, "feature_importances_"):
             importances = final_estimator.feature_importances_
-            # Try to infer feature names
             if hasattr(model, "feature_names_in_"):
                 feature_names = model.feature_names_in_
-            elif "Feature" in data.columns:
-                feature_names = data.columns
             else:
                 feature_names = [f"Feature {i+1}" for i in range(len(importances))]
-    
-            # Build DataFrame for importance chart
-            importance_df = pd.DataFrame({
-                "Feature": feature_names,
-                "Importance": importances
-            }).sort_values(by="Importance", ascending=False)
-    
-            # Bar plot
-            fig = px.bar(importance_df, x="Importance", y="Feature",
-                         orientation="h", title="Feature Importance Ranking")
-            st.plotly_chart(fig, use_container_width=True)
-    
+
+            importance_df = pd.DataFrame({"Feature": feature_names, "Importance": importances}).sort_values(by="Importance", ascending=False)
+
+            fig = px.bar(importance_df, x="Importance", y="Feature", orientation="h", title="Feature Importance Ranking")
+            st.plotly_chart(fig, width='stretch')
         else:
             st.info("This model does not expose feature_importances_. Try using permutation or SHAP explainability instead.")
-    
     except Exception as e:
         st.warning(f"Feature importance extraction failed: {e}")
 
-
-    # Visualization: Risk Factor distribution
     st.markdown("### 📈 Risk Factor Distribution")
     fig2 = px.histogram(data, x="Risk Factor", nbins=20, title="Distribution of Computed Risk Factors")
-    st.plotly_chart(fig2, use_container_width=True)
-
+    st.plotly_chart(fig2, width='stretch')
 
 # =====================================================
 # TAB 4: PDF REPORT GENERATOR
@@ -262,10 +230,12 @@ with tab_report:
         pdf.cell(0, 10, txt="Institutional Loan Report", ln=True, align="C")
         pdf.ln(10)
         pdf.cell(0, 10, txt=f"Institution: {inst_name}", ln=True)
-        pdf.cell(0, 10, txt=f"Risk Sensitivity (α): {alpha}", ln=True)
+        pdf.cell(0, 10, txt=f"Risk Sensitivity (alpha): {alpha}", ln=True)
         pdf.cell(0, 10, txt=f"Interest Rate (I): {interest_rate}%", ln=True)
-        pdf.cell(0, 10, txt=f"Risk Factor (Rₓ): {risk_factor_calc}", ln=True)
+        pdf.cell(0, 10, txt=f"Risk Factor (Rx): {risk_factor_calc}", ln=True)
         pdf.cell(0, 10, txt=f"Loan Amount: KES {loan_amount:,.0f}", ln=True)
+
         pdf.output("institutional_loan_report.pdf")
+
         with open("institutional_loan_report.pdf", "rb") as f:
             st.download_button("⬇️ Download Report", f, "institutional_loan_report.pdf")
