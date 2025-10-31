@@ -2,6 +2,7 @@
 🏦 Institutional & Farmer-Level Risk Assessment Engine
 
 Built for the Intro to AI 4 Startups Hackathon — Agri-Finance, Parametric Insurance & AI-Powered Credit Scoring (2025).
+
 This system empowers financial institutions to assess smallholder farmers’ creditworthiness through AI-driven risk modeling and data-informed lending simulations.
 
 🚀 Project Overview
@@ -14,24 +15,31 @@ Track 2 (Simulation Engine)	Institutional Streamlit app that transforms model ou
 Final Output	Interactive, explainable dashboard for loan recommendation, portfolio simulation, and PDF report generation.
 
 🧭 Repository Structure
+
 📦 ai-credit-scoring/
+/project-code
+├── README.md
+├── requirements.txt
+├── notebooks/
+│   ├── 01_data_preprocessing.ipynb
+│   ├── 02_feature_engineering.ipynb
+│   └── 03_model_training.ipynb
 ├── src/
-│   ├── AI_Hackaton_notebook.ipynb       # Model training, feature engineering, evaluation
-│   ├── data_preprocessing.ipynb         # Synthetic data generation & harmonization
-│   ├── risk_factor_analysis.ipynb       # Implements weighted risk computation (Word doc formula)
-│   └── utils.py                         # Reusable helper functions for normalization, encoding, etc.
-│
-├── tests/
-│   ├── test_model_accuracy.ipynb        # Validation notebook with ROC-AUC, precision, recall
-│   ├── test_streamlit_logic.ipynb       # Unit checks for loan formula, normalization, etc.
-│   └── test_data_integrity.ipynb        # Confirms dataset completeness & column consistency
-│
-├── app.py                               # Streamlit institutional interface (v5.1)
-├── main_harmonized_dataset_final.csv    # Final harmonized dataset
-├── credit_model.pkl.gz                  # Trained ML model (compressed)
-├── requirements.txt                     # Dependencies for model & app
-├── RISK FACTOR AND FINANCING CALCULATION updated.docx # Documentation of formulas
-└── README.md                            # This file
+│   ├── model.py
+│   ├── pipeline.py
+│   └── utils.py
+└── tests/
+    └── test_pipeline.py
+
+/project-docs
+├── TECHNICAL_NARRATIVE.pdf
+├── METHODOLOGY.md
+├── LICENSE
+└── README.md
+
+/project-slides
+├── slides.pdf
+└── slides.pptx
 
 💻 Installation & Setup
 1. Clone Repository
