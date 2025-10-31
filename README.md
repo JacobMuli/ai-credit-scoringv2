@@ -6,9 +6,13 @@ This system empowers financial institutions to assess smallholder farmers’ cre
 
 🚀 Project Overview
 Component	Description
+
 Track 1 (Model)	Predictive model trained using Random Forests to estimate risk of default using farmer, environmental, and economic data.
+
 Track 2 (Simulation Engine)	Institutional Streamlit app that transforms model outputs into actionable lending decisions based on institutional risk sensitivity (α) and interest rate (I).
+
 Final Output	Interactive, explainable dashboard for loan recommendation, portfolio simulation, and PDF report generation.
+
 🧭 Repository Structure
 📦 ai-credit-scoring/
 ├── src/
