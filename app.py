@@ -221,59 +221,64 @@ with tab_dashboard:
     except Exception as e:
         st.warning(f"Feature importance extraction failed: {e}")
 
-    # 🧠 SHAP & LIME Explainability
-    st.markdown("### 🧠 Model Explainability — SHAP & LIME")
-    try:
-        import shap
-        from lime import lime_tabular
+# 🧠 SHAP & LIME Explainability
+st.markdown("### 🧠 Model Explainability — SHAP & LIME")
+try:
+    import shap
+    from lime import lime_tabular
 
-        X = data.select_dtypes(include=[np.number]).dropna()
-        if len(X) > 0:
-            X_sample = X.sample(min(100, len(X)), random_state=42)
+    X = data.select_dtypes(include=[np.number]).dropna()
+    if len(X) > 0:
+        X_sample = X.sample(min(100, len(X)), random_state=42)
 
-            # SHAP Global
-            st.markdown("#### 🔹 SHAP Summary Plot (Global Feature Impact)")
-            # Extract the final estimator if the model is a pipeline
-            if hasattr(model, "named_steps"):
-                final_model = list(model.named_steps.values())[-1]
-            elif hasattr(model, "steps"):
-                final_model = model.steps[-1][1]
-            else:
-                final_model = model
-            
-            # Create SHAP explainer for the final model
-            explainer = shap.TreeExplainer(final_model)
-            shap_values = explainer.shap_values(X_sample)
+        # Extract final estimator if pipeline
+        if hasattr(model, "named_steps"):
+            final_model = list(model.named_steps.values())[-1]
+        elif hasattr(model, "steps"):
+            final_model = model.steps[-1][1]
+        else:
+            final_model = model
 
-            fig, ax = plt.subplots()
-            shap.summary_plot(shap_values, X_sample, show=False)
-            st.pyplot(fig, bbox_inches="tight", dpi=120)
+        # SHAP Global
+        st.markdown("#### 🔹 SHAP Summary Plot (Global Feature Impact)")
+        explainer = shap.TreeExplainer(final_model)
+        shap_values = explainer.shap_values(X_sample)
 
-            # SHAP Local
-            st.markdown("#### 🔹 SHAP Force Plot (Single Farmer Prediction)")
-            idx = st.number_input("Select Farmer Index (for SHAP Force Plot)", 0, len(X_sample)-1, 0, 1)
-            shap.initjs()
-            st_shap = shap.force_plot(explainer.expected_value[1], shap_values[1][idx, :], X_sample.iloc[idx, :], matplotlib=False)
-            st.components.v1.html(shap.getjs() + st_shap.html(), height=300)
+        fig, ax = plt.subplots()
+        shap.summary_plot(shap_values, X_sample, show=False)
+        st.pyplot(fig, bbox_inches="tight", dpi=120)
 
-            # LIME
-            st.markdown("#### 🔹 LIME Explanation (Individual Prediction)")
-            lime_explainer = lime_tabular.LimeTabularExplainer(
-                training_data=np.array(X_sample),
-                feature_names=X_sample.columns.tolist(),
-                mode="classification"
-            )
-            farmer_index = st.number_input("Select Farmer Index for LIME", 0, len(X_sample)-1, 1, 1)
-            farmer_instance = X_sample.iloc[farmer_index]
-            explanation = lime_explainer.explain_instance(
-                data_row=farmer_instance,
-                predict_fn=model.predict_proba,
-                num_features=10
-            )
-            html = explanation.as_html()
-            st.components.v1.html(html, height=600, scrolling=True)
-    except Exception as e:
-        st.warning(f"Explainability section could not be generated: {e}")
+        # SHAP Local
+        st.markdown("#### 🔹 SHAP Force Plot (Single Farmer Prediction)")
+        idx = st.number_input("Select Farmer Index (for SHAP Force Plot)", 0, len(X_sample)-1, 0, 1)
+        shap.initjs()
+        st_shap = shap.force_plot(
+            explainer.expected_value[1],
+            shap_values[1][idx, :],
+            X_sample.iloc[idx, :],
+            matplotlib=False
+        )
+        st.components.v1.html(shap.getjs() + st_shap.html(), height=300)
+
+        # LIME
+        st.markdown("#### 🔹 LIME Explanation (Individual Prediction)")
+        lime_explainer = lime_tabular.LimeTabularExplainer(
+            training_data=np.array(X_sample),
+            feature_names=X_sample.columns.tolist(),
+            mode="classification"
+        )
+        farmer_index = st.number_input("Select Farmer Index for LIME", 0, len(X_sample)-1, 1, 1)
+        farmer_instance = X_sample.iloc[farmer_index]
+        explanation = lime_explainer.explain_instance(
+            data_row=farmer_instance,
+            predict_fn=final_model.predict_proba,
+            num_features=10
+        )
+        html = explanation.as_html()
+        st.components.v1.html(html, height=600, scrolling=True)
+except Exception as e:
+    st.warning(f"Explainability section could not be generated: {e}")
+
 
     # 📈 Risk Factor Distribution
     st.markdown("### 📈 Risk Factor Distribution")
