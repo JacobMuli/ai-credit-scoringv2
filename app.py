@@ -138,23 +138,44 @@ with tab_dashboard:
             st.plotly_chart(fig, width='stretch')
         elif shap is not None:
             # Prepare CPU-safe SHAP computation
-            X = pd.get_dummies(data.select_dtypes(exclude=["object"])).fillna(0)
-            sample_X = X.sample(n=min(100, len(X)), random_state=42)
+            # Ensure input matches what the model was trained on
+            X = data.copy()
+            # Handle missing values & encoding safely
+            X_num = pd.get_dummies(X.select_dtypes(exclude=["object"])).fillna(0)
+            X_sample = X_num.sample(n=min(100, len(X_num)), random_state=42)
+        
+            # If pipeline exists, transform using its preprocessing steps
             try:
-                explainer = shap.Explainer(model, sample_X)
-                shap_values = explainer(sample_X)
+                if pipeline_obj is not None and hasattr(pipeline_obj, "transform"):
+                    X_transformed = pipeline_obj.transform(X_sample)
+                    explainer = shap.Explainer(final_estimator, X_transformed)
+                    shap_values = explainer(X_transformed)
+                    feature_names = [f"Feature_{i}" for i in range(X_transformed.shape[1])]
+                else:
+                    explainer = shap.Explainer(model, X_sample)
+                    shap_values = explainer(X_sample)
+                    feature_names = list(X_sample.columns)
+            except Exception as e:
+                st.warning(f"SHAP explainer initialization failed: {e}")
+                shap_values = None
+        
+            # Only plot if shapes match
+            if shap_values is not None and shap_values.values.shape[1] == len(feature_names):
                 mean_abs = np.abs(shap_values.values).mean(axis=0)
-                summary_df = pd.DataFrame({"Feature": sample_X.columns, "Mean|SHAP|": mean_abs})
+                summary_df = pd.DataFrame({"Feature": feature_names, "Mean|SHAP|": mean_abs})
                 summary_df = summary_df.sort_values("Mean|SHAP|", ascending=False)
-
-                st.success("✅ SHAP computed successfully in CPU-safe mode.")
+        
+                st.success("✅ SHAP computed successfully with feature alignment.")
                 fig = px.bar(summary_df, x="Mean|SHAP|", y="Feature", orientation="h", title="Top SHAP Feature Importances")
                 st.plotly_chart(fig, width='stretch')
-                st.download_button("💾 Download SHAP Importances (CSV)", summary_df.to_csv(index=False).encode("utf-8"), "shap_importances.csv", "text/csv")
-            except Exception as e:
-                st.warning(f"SHAP computation failed gracefully: {e}")
-        else:
-            st.info("SHAP not installed or unavailable. Install with `pip install shap==0.41.0` for CPU-safe mode.")
+                st.download_button(
+                    "💾 Download SHAP Importances (CSV)",
+                    summary_df.to_csv(index=False).encode("utf-8"),
+                    "shap_importances.csv",
+                    "text/csv"
+                )
+            else:
+                st.info("⚠️ SHAP output shape mismatch. Try retraining with consistent features or include preprocessing pipeline.")
     except Exception as e:
         st.error(f"Explainability error: {e}")
 
