@@ -1,4 +1,4 @@
-🌾 AI Credit Scoring System for Smallholder Farmers (v5.1)
+🌾 E-Jenga Credit Scoring System for Smallholder Farmers (v5.1)
 🏦 Institutional & Farmer-Level Risk Assessment Engine
 
 Built for the Intro to AI 4 Startups Hackathon — Agri-Finance, Parametric Insurance & AI-Powered Credit Scoring (2025).
@@ -130,3 +130,5 @@ Deliverable	Description
 👩🏾‍💻 Contributors
 
 Team: E-Jenga
+Challenge: Intro to AI 4 Startups — Responsible & Inclusive AgriTech Challenge
+Location: Nairobi, Kenya
