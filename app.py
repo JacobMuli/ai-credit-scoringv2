@@ -1,4 +1,4 @@
-# 🌾 AI Credit Scoring System (Institutional Edition v5.0 Final)
+# 🌾 AI Credit Scoring System (Institutional Edition v5.1 Final)
 # -----------------------------------------------------------
 # Unified Institutional + Farmer-Level Credit Scoring Engine
 # -----------------------------------------------------------
@@ -7,7 +7,7 @@
 # - Institutional parameters (α = Risk Sensitivity, I = Interest Rate)
 # Implements loan formula:
 #   L = (P × (1 × α × Rₓ)) / (1 + I)
-# Generates dynamic risk assessment, portfolio simulation, and PDF reports.
+# Generates dynamic risk assessment, portfolio simulation, model dashboard, and PDF reports.
 # -----------------------------------------------------------
 
 import streamlit as st
@@ -18,6 +18,8 @@ import seaborn as sns
 import pickle, gzip, io, os, requests
 from fpdf import FPDF
 from PIL import Image
+from sklearn.metrics import roc_auc_score, confusion_matrix, classification_report
+import plotly.express as px
 
 # -----------------------------------------------------
 # 🌍 PAGE CONFIGURATION
@@ -64,7 +66,7 @@ def load_data():
 data = load_data()
 
 # -----------------------------------------------------
-# 🧮 RISK FACTOR COMPUTATION
+# 🧮 RISK FACTOR COMPUTATION FUNCTION
 # -----------------------------------------------------
 def compute_risk_from_row(r):
     return round(
@@ -79,15 +81,12 @@ def compute_risk_from_row(r):
         0.02 * {"Yes": 0, "No": 1}.get(r.get("Input Access and Affordability", "Yes"), 0), 3
     )
 
-# Compute risk and projected revenue if missing
+# Add missing computed columns
 if "Risk Factor" not in data.columns:
     data["Risk Factor"] = data.apply(lambda row: compute_risk_from_row(row), axis=1)
 
-if "Projected Revenue" not in data.columns:
-    if "Previous Yield Output (Kgs)" in data.columns and "Price" in data.columns:
-        data["Projected Revenue"] = data["Previous Yield Output (Kgs)"] * data["Price"]
-    else:
-        data["Projected Revenue"] = 0
+if "Projected Revenue" not in data.columns and "Previous Yield Output (Kgs)" in data.columns:
+    data["Projected Revenue"] = data["Previous Yield Output (Kgs)"] * data["Price"]
 
 # -----------------------------------------------------
 # 🧭 TABS
@@ -105,14 +104,12 @@ tab_assess, tab_portfolio, tab_dashboard, tab_report = st.tabs([
 with tab_assess:
     st.subheader("🏦 Institutional Risk Factor & Loan Calculator — Farmer Inputs Included")
 
-    # Institution parameters
     st.sidebar.header("Institution Parameters")
     inst_name = st.sidebar.text_input("Institution Name (optional)")
     logo_file = st.sidebar.file_uploader("Upload Institution Logo (optional)", type=["png", "jpg", "jpeg"])
     alpha = st.sidebar.slider("Risk Sensitivity (α)", 0.1, 1.5, 0.9, 0.01)
     interest_rate = st.sidebar.number_input("Annual Interest Rate (%)", 0.0, 100.0, 16.0, 0.1)
 
-    # Farmer agronomic inputs
     st.sidebar.header("Farmer Inputs")
     aez = st.sidebar.selectbox("Agro-Ecological Zone Compatibility", ["High", "Moderate", "Low"])
     pest = st.sidebar.selectbox("Pest & Disease Vulnerability", ["Low", "Moderate", "High"])
@@ -124,36 +121,11 @@ with tab_assess:
     coop = st.sidebar.selectbox("Cooperative Membership", ["Yes", "No"])
     input_access = st.sidebar.selectbox("Input Access and Affordability", ["Yes", "No"])
 
-    # Economic inputs
     st.sidebar.header("Economic Inputs")
     price = st.sidebar.number_input("Expected Crop Price (KES/kg)", 1.0, 10000.0, 100.0, 0.1)
     yield_output = st.sidebar.number_input("Expected Yield Output (Kgs)", 1, 1000000, 20000)
 
-    # ---------------------------
-    # 💰 COMPUTE AND DISPLAY RESULTS
-    # ---------------------------
-    st.markdown("### 🧮 Computation Summary")
-    
-    # Calculate dynamically
-    projected_revenue = yield_output * price
-    I = interest_rate / 100
-    loan_amount = (projected_revenue * (1 * alpha * risk_factor_calc)) / (1 + I)
-    eligibility = "✅ Eligible for Financing" if risk_factor_calc <= 0.5 else "⚠️ High Risk - Review Required"
-    
-    # Only show if all inputs valid
-    if projected_revenue > 0 and alpha > 0 and interest_rate >= 0:
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Risk Factor (Rₓ)", f"{risk_factor_calc:.3f}")
-        c2.metric("Projected Revenue (P)", f"KES {projected_revenue:,.0f}")
-        c3.metric("Risk Sensitivity (α)", f"{alpha}")
-        c4.metric("Interest Rate (I)", f"{interest_rate:.2f}%")
-    
-        st.success(f"💰 **Recommended Principal Loan (L)** = KES {loan_amount:,.0f}")
-        st.info(f"Credit Eligibility: {eligibility}")
-    else:
-        st.warning("👈 Please input all required values to compute the loan amount.")
-
-    # Compute risk factor
+    # Compute risk and loan
     risk_factor_calc = compute_risk_from_row({
         "Agro-Ecological Zone Compatibility": aez,
         "Pest disease vulnerability": pest,
@@ -165,23 +137,83 @@ with tab_assess:
         "Cooperative Membership": coop,
         "Input Access and Affordability": input_access
     })
-
-    # Loan computation
     projected_revenue = yield_output * price
     I = interest_rate / 100
     loan_amount = (projected_revenue * (1 * alpha * risk_factor_calc)) / (1 + I)
     eligibility = "✅ Eligible for Financing" if risk_factor_calc <= 0.5 else "⚠️ High Risk - Review Required"
 
-    st.metric("Risk Factor (Rₓ)", f"{risk_factor_calc:.3f}")
-    st.metric("Loan Amount (KES)", f"{loan_amount:,.0f}")
-    st.info(f"Eligibility: {eligibility}")
+    st.markdown("### 🧮 Computation Summary")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Risk Factor (Rₓ)", f"{risk_factor_calc:.3f}")
+    c2.metric("Projected Revenue (P)", f"KES {projected_revenue:,.0f}")
+    c3.metric("Risk Sensitivity (α)", f"{alpha}")
+    c4.metric("Interest Rate (I)", f"{interest_rate:.2f}%")
+
+    st.success(f"💰 **Recommended Principal Loan (L)** = KES {loan_amount:,.0f}")
+    st.info(f"Credit Eligibility: {eligibility}")
+
+# =====================================================
+# TAB 2: PORTFOLIO SIMULATION
+# =====================================================
+with tab_portfolio:
+    st.subheader("💰 Institutional Portfolio Simulation")
+
+    alpha_p = st.slider("Institution Risk Sensitivity (α)", 0.1, 1.5, 0.9, 0.01)
+    interest_rate_p = st.number_input("Interest Rate (%)", 0.0, 100.0, 16.0, 0.1)
+    I_p = interest_rate_p / 100
+
+    data["Loan Amount"] = (data["Projected Revenue"] * (1 * alpha_p * data["Risk Factor"])) / (1 + I_p)
+    data["Loan Amount"] = data["Loan Amount"].round(2)
+
+    # Filters
+    crop_filter = st.selectbox("Filter by Crop Type", ["All"] + sorted(data["Crop Type"].unique().tolist()))
+    df_sim = data if crop_filter == "All" else data[data["Crop Type"] == crop_filter]
+
+    # Portfolio metrics
+    st.metric("Average Loan per Farmer", f"KES {df_sim['Loan Amount'].mean():,.0f}")
+    st.metric("Total Portfolio Loan", f"KES {df_sim['Loan Amount'].sum():,.0f}")
+
+    st.markdown("### 📊 Loan Distribution by Risk Factor")
+    fig = px.scatter(df_sim, x="Risk Factor", y="Loan Amount", color="Crop Type", size="Loan Amount",
+                     title="Loan Amount vs Risk Factor")
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.download_button("💾 Download Portfolio Data", df_sim.to_csv(index=False).encode("utf-8"),
+                       "portfolio_simulation.csv", "text/csv")
+
+# =====================================================
+# TAB 3: MODEL DASHBOARD
+# =====================================================
+with tab_dashboard:
+    st.subheader("📊 Model Performance Dashboard")
+    if "default" in data.columns:
+        try:
+            X = data.drop(columns=["default"], errors="ignore").select_dtypes(include=["number"])
+            y = data["default"]
+            y_pred = model.predict(X)
+            y_proba = model.predict_proba(X)[:, 1]
+            auc = roc_auc_score(y, y_proba)
+            st.metric("ROC-AUC Score", f"{auc:.3f}")
+
+            # Confusion Matrix
+            cm = confusion_matrix(y, y_pred)
+            st.write("### Confusion Matrix")
+            st.dataframe(pd.DataFrame(cm, columns=["Predicted 0", "Predicted 1"], index=["Actual 0", "Actual 1"]))
+
+            # Classification Report
+            report = classification_report(y, y_pred, output_dict=True)
+            st.write(pd.DataFrame(report).transpose())
+
+        except Exception as e:
+            st.error(f"Error evaluating model: {e}")
+    else:
+        st.warning("No 'default' column found — unable to compute model metrics.")
 
 # =====================================================
 # TAB 4: PDF REPORT GENERATOR
 # =====================================================
 with tab_report:
     st.subheader("📄 Generate Institutional Loan Report (PDF)")
-
     if st.button("📄 Generate PDF Report"):
         pdf = FPDF()
         pdf.add_page()
