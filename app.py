@@ -110,7 +110,6 @@ with tab_predict:
     st.subheader("🌿 New Farmer Risk Factor & Financing Assessment")
     st.sidebar.header("Enter New Farmer Details")
 
-    # --- User Inputs ---
     crop = st.sidebar.selectbox("Crop Type", sorted(data["Crop Type"].unique()))
     gender = st.sidebar.selectbox("Gender", ["Male", "Female"])
     farm_size = st.sidebar.number_input("Farm Size (hectares)", 0.1, 100.0, 3.0)
@@ -119,7 +118,6 @@ with tab_predict:
     age = st.sidebar.slider("Farmer Age", 18, 90, 40)
     coop = st.sidebar.selectbox("Cooperative Membership", ["Yes", "No"])
 
-    # --- Risk Inputs ---
     aez = st.sidebar.selectbox("Agro-Ecological Zone Compatibility", ["High", "Moderate", "Low"])
     pest = st.sidebar.selectbox("Pest & Disease Vulnerability", ["Low", "Moderate", "High"])
     water = st.sidebar.selectbox("Water & Irrigation Reliability", ["High", "Moderate", "Low"])
@@ -129,7 +127,6 @@ with tab_predict:
     experience = st.sidebar.selectbox("Farmer Experience", [">9 years", "5-9 years", "1-4 years", "<1 year"])
     input_access = st.sidebar.selectbox("Input Access and Affordability", ["Yes", "No"])
 
-    # --- Compute Risk Factor (Weighted Formula) ---
     risk_factor = (
         0.18 * {"High": 0, "Moderate": 0.5, "Low": 1}[aez] +
         0.17 * {"Low": 0, "Moderate": 0.5, "High": 1}[pest] +
@@ -143,12 +140,10 @@ with tab_predict:
     )
     risk_factor = round(risk_factor, 3)
 
-    # --- Financing Calculation ---
     projected_revenue = yield_output * price
     loan_amount = projected_revenue * (1 - risk_factor)
     eligibility = "✅ Eligible for Financing" if risk_factor <= 0.5 else "⚠️ High Risk - Not Eligible"
 
-    # --- Display Results ---
     st.markdown("### 🧾 New Farmer Risk & Financing Summary")
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Agro Risk Factor", f"{risk_factor:.3f}")
@@ -156,7 +151,6 @@ with tab_predict:
     col3.metric("Recommended Loan (KES)", f"{loan_amount:,.0f}")
     col4.metric("Status", eligibility)
 
-    # --- Risk Visualization Gauge ---
     st.markdown("### 🎯 Risk Visualization")
     import plotly.graph_objects as go
 
@@ -182,7 +176,6 @@ with tab_predict:
     ))
     st.plotly_chart(fig, use_container_width=True)
 
-    # --- Explanation Section ---
     st.markdown("### 🧮 Calculation Breakdown")
     st.write(f"""
     - **Weighted Risk Factor:** Computed using the official weights from the Risk Factor Formula.
@@ -191,95 +184,115 @@ with tab_predict:
     - **Eligibility:** Determined by Risk Factor threshold (≤ 0.5 = Eligible)
     """)
 
-    # --- Save Farmer Report ---
-    st.markdown("### 📥 Save Farmer Report")
-    import io
-    from fpdf import FPDF
-    
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=12)
-    pdf.cell(200, 10, txt="Farmer Risk & Financing Report", ln=True, align='C')
-    pdf.cell(200, 10, txt=f"Crop Type: {crop}", ln=True)
-    pdf.cell(200, 10, txt=f"Gender: {gender}", ln=True)
-    pdf.cell(200, 10, txt=f"Farm Size: {farm_size} hectares", ln=True)
-    pdf.cell(200, 10, txt=f"Expected Yield: {yield_output:,.0f} Kgs", ln=True)
-    pdf.cell(200, 10, txt=f"Expected Price: {price} KES/kg", ln=True)
-    pdf.cell(200, 10, txt=f"Risk Factor: {risk_factor}", ln=True)
-    pdf.cell(200, 10, txt=f"Projected Revenue: {projected_revenue:,.0f} KES", ln=True)
-    pdf.cell(200, 10, txt=f"Recommended Loan: {loan_amount:,.0f} KES", ln=True)
-    
-    # remove emojis from eligibility for PDF
-    clean_eligibility = eligibility.replace("✅ ", "").replace("⚠️ ", "")
-    pdf.cell(200, 10, txt=f"Eligibility: {clean_eligibility}", ln=True)
-    
-    # output buffer
-    pdf_buffer = io.BytesIO()
-    pdf.output(name=pdf_buffer, dest='S')  # return PDF as bytes
-    pdf_buffer.seek(0)
-
-    
-    st.download_button(
-        label="💾 Download Farmer Report as PDF",
-        data=pdf_buffer.getvalue(),
-        file_name="farmer_risk_financing_report.pdf",
-        mime="application/pdf"
-    )
-
-
 # =====================================================
-# TAB 2: FINANCING SIMULATION
+# TAB 2: FINANCING SIMULATION (UPDATED)
 # =====================================================
 with tab_financing:
-    st.subheader("💰 Loan and Financing Simulation")
-    st.write("Loan amounts are based on risk-adjusted projected revenue.")
+    st.subheader("💰 Loan and Financing Simulation — Dataset-wide")
+    st.write("Loan amounts are computed as: Projected Revenue × (1 - Risk Factor). Use the controls to filter and export results.")
 
-    data["Projected Revenue"] = data["Previous Yield Output (Kgs)"] * data["Price"]
+    if "Projected Revenue" not in data.columns:
+        data["Projected Revenue"] = data["Previous Yield Output (Kgs)"] * data["Price"]
     data["Loan Amount"] = (data["Projected Revenue"] * (1 - data["Risk Factor"])).round(2)
 
-    st.dataframe(data[["Farmer ID", "Crop Type", "Risk Factor", "Projected Revenue", "Loan Amount"]].head(10))
+    colA, colB, colC = st.columns([1,1,1])
+    with colA:
+        crop_filter = st.selectbox("Filter by Crop Type", options=["All"] + sorted(data["Crop Type"].unique().tolist()))
+    with colB:
+        risk_band = st.select_slider("Risk band", options=["All","Low (<=0.4)","Moderate (0.4-0.6)","High (>0.6)"], value="All")
+    with colC:
+        loan_range = st.slider("Loan amount range (KES)", int(data["Loan Amount"].min()), int(max(data["Loan Amount"].max(), 1)), (int(data["Loan Amount"].min()), int(min(data["Loan Amount"].max(), 500000))))
 
-    st.markdown("### 📊 Loan Amount Distribution by Crop Type")
-    fig, ax = plt.subplots(figsize=(8, 5))
-    sns.boxplot(data=data, x="Crop Type", y="Loan Amount", ax=ax)
-    ax.set_title("Loan Distribution by Crop Type")
-    st.pyplot(fig)
+    df_sim = data.copy()
+    if crop_filter != "All":
+        df_sim = df_sim[df_sim["Crop Type"] == crop_filter]
 
-    # 📤 Export simulated loan data
-    st.markdown("### 📤 Export Loan Simulation Data")
-    csv_data = data[["Farmer ID", "Crop Type", "Risk Factor", "Projected Revenue", "Loan Amount"]].to_csv(index=False).encode('utf-8')
-    st.download_button(
-        label="💾 Download Loan Simulation Data as CSV",
-        data=csv_data,
-        file_name="loan_simulation_results.csv",
-        mime="text/csv"
-    )
+    if risk_band != "All":
+        if "Low" in risk_band:
+            df_sim = df_sim[df_sim["Risk Factor"] <= 0.4]
+        elif "Moderate" in risk_band:
+            df_sim = df_sim[(df_sim["Risk Factor"] > 0.4) & (df_sim["Risk Factor"] <= 0.6)]
+        else:
+            df_sim = df_sim[df_sim["Risk Factor"] > 0.6]
+
+    df_sim = df_sim[(df_sim["Loan Amount"] >= loan_range[0]) & (df_sim["Loan Amount"] <= loan_range[1])]
+
+    total_farmers = len(df_sim)
+    avg_loan = df_sim["Loan Amount"].mean() if total_farmers else 0
+    total_loan = df_sim["Loan Amount"].sum() if total_farmers else 0
+
+    k1, k2, k3 = st.columns(3)
+    k1.metric("Farmers in selection", f"{total_farmers}")
+    k2.metric("Average Loan (KES)", f"{avg_loan:,.0f}")
+    k3.metric("Total Loan (KES)", f"{total_loan:,.0f}")
+
+    st.markdown("#### 🔎 Sample of simulated loans")
+    st.dataframe(df_sim[["Farmer ID","Farm Location","Crop Type","Risk Factor","Projected Revenue","Loan Amount"]].reset_index(drop=True).head(20), use_container_width=True)
+
+    st.markdown("### 📊 Visualizations")
+    fig1, ax1 = plt.subplots(figsize=(8,4))
+    sns.boxplot(data=df_sim, x="Crop Type", y="Loan Amount", ax=ax1)
+    ax1.set_title("Loan Amount Distribution by Crop Type (Filtered)")
+    plt.xticks(rotation=30)
+    st.pyplot(fig1)
+
+    fig2, ax2 = plt.subplots(figsize=(8,3))
+    df_group = df_sim.groupby("Crop Type")["Loan Amount"].agg(["mean","sum","count"]).sort_values("mean", ascending=False).reset_index()
+    sns.barplot(data=df_group, x="Crop Type", y="mean", ax=ax2)
+    ax2.set_ylabel("Mean Loan Amount (KES)")
+    plt.xticks(rotation=30)
+    st.pyplot(fig2)
+
+    fig3, ax3 = plt.subplots(figsize=(8,3))
+    ax3.hist(df_sim["Risk Factor"], bins=20)
+    ax3.set_xlabel("Risk Factor")
+    ax3.set_title("Risk Factor Distribution (Filtered)")
+    st.pyplot(fig3)
+
+    st.markdown("### 📤 Export filtered simulation results")
+    csv_data = df_sim[["Farmer ID","Farm Location","Crop Type","Risk Factor","Projected Revenue","Loan Amount"]].to_csv(index=False).encode("utf-8")
+    st.download_button(label="💾 Download filtered simulation CSV", data=csv_data, file_name="filtered_loan_simulation.csv", mime="text/csv")
 
 # =====================================================
-# TAB 3: MODEL DASHBOARD
+# TAB 3: MODEL PERFORMANCE DASHBOARD (UPDATED FOR NEW DATASET)
 # =====================================================
 with tab_dashboard:
-    st.subheader("📊 Model Performance Dashboard")
+    st.subheader("📊 Model Performance Dashboard — Using Harmonized Dataset")
 
-    if "default" in data.columns:
-        X = data.drop(columns=["default"])
+    if "default" not in data.columns:
+        st.warning("No 'default' column available in dataset to evaluate model. Create a binary target first.")
+    else:
+        expected_features = [
+            'Agro-Ecological Zone Compatibility', 'Pest disease vulnerability',
+            'Water irrigation reliability', 'Post Harvest Storage', 'Market Access',
+            'Planting/Sowing Time', 'Farmer experience', 'Cooperative Membership',
+            'Input Access and Affordability', 'Crop Type', 'Gender', 'Farm size',
+            'Previous Yield Output (Kgs)', 'Age'
+        ]
+
+        present = [c for c in expected_features if c in data.columns]
+        missing = [c for c in expected_features if c not in data.columns]
+
+        if missing:
+            st.warning(f"Some expected feature columns are missing from dataset and will be filled with defaults: {missing}")
+
+        X = pd.DataFrame()
+        for col in expected_features:
+            if col in data.columns:
+                X[col] = data[col]
+            else:
+                if col in ["Farm size","Previous Yield Output (Kgs)","Age"]:
+                    X[col] = 0
+                else:
+                    try:
+                        X[col] = data[present].iloc[:,0].mode()[0]
+                    except Exception:
+                        X[col] = "Unknown"
+
         y_true = data["default"]
+
         try:
             y_pred = model.predict(X)
             y_proba = model.predict_proba(X)[:, 1]
 
-            fpr, tpr, _ = roc_curve(y_true, y_proba)
-            roc_auc = roc_auc_score(y_true, y_proba)
-            fig, ax = plt.subplots()
-            ax.plot(fpr, tpr, label=f"AUC = {roc_auc:.3f}")
-            ax.plot([0, 1], [0, 1], 'k--')
-            ax.legend(); ax.set_xlabel("False Positive Rate"); ax.set_ylabel("True Positive Rate")
-            st.pyplot(fig)
-
-            cm = confusion_matrix(y_true, y_pred)
-            fig, ax = plt.subplots()
-            sns.heatmap(cm, annot=True, fmt='d', cmap='Greens', cbar=False, ax=ax)
-            ax.set_xlabel("Predicted"); ax.set_ylabel("True")
-            st.pyplot(fig)
-        except Exception as e:
-            st.warning(f"Model evaluation unavailable: {e}")
+            from sklearn.metrics import classification_report, accuracy
