@@ -6,3 +6,5 @@ shap
 lime
 matplotlib
 seaborn
+plotly>=5.0
+fpdf>=1.7
