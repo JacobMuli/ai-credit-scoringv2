@@ -8,6 +8,7 @@
 # Implements loan formula:
 #   L = (P × (1 × α × Rₓ)) / (1 + I)
 # Generates dynamic risk assessment, portfolio simulation, model dashboard, and PDF reports.
+# Includes SHAP & LIME explainability for ethical and transparent AI.
 # -----------------------------------------------------------
 
 import streamlit as st
@@ -24,8 +25,8 @@ import plotly.express as px
 # -----------------------------------------------------
 # 🌍 PAGE CONFIGURATION
 # -----------------------------------------------------
-st.set_page_config(page_title="🏦 Institutional Credit Scoring Engine", layout="wide")
-st.title("🏦 E-jenga Credit Engine")
+st.set_page_config(page_title="🏦 E-jenga Credit Engine", layout="wide")
+st.title("🏦 E-jenga Credit Scoring & Loan Assessment Engine")
 st.caption("Institutional decision-support combining farmer agronomic risk with institutional lending policies.")
 
 MODEL_PATH = "credit_model.pkl.gz"
@@ -94,7 +95,7 @@ if "Projected Revenue" not in data.columns and "Previous Yield Output (Kgs)" in 
 tab_assess, tab_portfolio, tab_dashboard, tab_report = st.tabs([
     "🏦 Institutional Risk & Loan Assessment",
     "💰 Portfolio Simulation",
-    "📊 Model Dashboard",
+    "📊 Model Dashboard (with Explainability)",
     "📄 PDF Report Generator"
 ])
 
@@ -165,11 +166,9 @@ with tab_portfolio:
     data["Loan Amount"] = (data["Projected Revenue"] * (1 * alpha_p * data["Risk Factor"])) / (1 + I_p)
     data["Loan Amount"] = data["Loan Amount"].round(2)
 
-    # Filters
     crop_filter = st.selectbox("Filter by Crop Type", ["All"] + sorted(data["Crop Type"].unique().tolist()))
     df_sim = data if crop_filter == "All" else data[data["Crop Type"] == crop_filter]
 
-    # Portfolio metrics
     st.metric("Average Loan per Farmer", f"KES {df_sim['Loan Amount'].mean():,.0f}")
     st.metric("Total Portfolio Loan", f"KES {df_sim['Loan Amount'].sum():,.0f}")
 
@@ -182,16 +181,14 @@ with tab_portfolio:
                        "portfolio_simulation.csv", "text/csv")
 
 # =====================================================
-# TAB 3: MODEL DASHBOARD (DESCRIPTIVE ANALYTICS)
+# TAB 3: MODEL DASHBOARD (DESCRIPTIVE ANALYTICS + EXPLAINABILITY)
 # =====================================================
 with tab_dashboard:
     st.subheader("📊 Model & Dataset Insights Dashboard")
 
-    # Summary statistics
     st.markdown("### 🔍 Dataset Summary Statistics")
     st.dataframe(data.describe(include='all').transpose())
 
-    # Correlation heatmap (numerical)
     st.markdown("### 🔗 Feature Correlation Matrix")
     numeric_data = data.select_dtypes(include=[np.number])
     if not numeric_data.empty:
@@ -201,54 +198,77 @@ with tab_dashboard:
     else:
         st.info("No numerical columns available for correlation heatmap.")
 
-    # -----------------------------------------------------
-    # 🌾 Feature Importance (works with Pipeline models)
-    # -----------------------------------------------------
+    # 🌾 Feature Importance
     st.markdown("### 🌾 Feature Importance (Model Explainability)")
-    
     try:
-        # If model is a pipeline, extract the final estimator
         if hasattr(model, "named_steps"):
             final_estimator = list(model.named_steps.values())[-1]
         elif hasattr(model, "steps"):
             final_estimator = model.steps[-1][1]
         else:
             final_estimator = model
-    
-        # Ensure final estimator supports feature_importances_
+
         if hasattr(final_estimator, "feature_importances_"):
             importances = final_estimator.feature_importances_
-            # Try to infer feature names
-            if hasattr(model, "feature_names_in_"):
-                feature_names = model.feature_names_in_
-            elif "Feature" in data.columns:
-                feature_names = data.columns
-            else:
-                feature_names = [f"Feature {i+1}" for i in range(len(importances))]
-    
-            # Build DataFrame for importance chart
+            feature_names = getattr(model, "feature_names_in_", data.columns)
             importance_df = pd.DataFrame({
                 "Feature": feature_names,
                 "Importance": importances
             }).sort_values(by="Importance", ascending=False)
-    
-            # Bar plot
             fig = px.bar(importance_df, x="Importance", y="Feature",
                          orientation="h", title="Feature Importance Ranking")
             st.plotly_chart(fig, use_container_width=True)
-    
-        else:
-            st.info("This model does not expose feature_importances_. Try using permutation or SHAP explainability instead.")
-    
     except Exception as e:
         st.warning(f"Feature importance extraction failed: {e}")
 
+    # 🧠 SHAP & LIME Explainability
+    st.markdown("### 🧠 Model Explainability — SHAP & LIME")
+    try:
+        import shap
+        from lime import lime_tabular
 
-    # Visualization: Risk Factor distribution
+        X = data.select_dtypes(include=[np.number]).dropna()
+        if len(X) > 0:
+            X_sample = X.sample(min(100, len(X)), random_state=42)
+
+            # SHAP Global
+            st.markdown("#### 🔹 SHAP Summary Plot (Global Feature Impact)")
+            explainer = shap.TreeExplainer(model)
+            shap_values = explainer.shap_values(X_sample)
+            fig, ax = plt.subplots()
+            shap.summary_plot(shap_values, X_sample, show=False)
+            st.pyplot(fig, bbox_inches="tight", dpi=120)
+
+            # SHAP Local
+            st.markdown("#### 🔹 SHAP Force Plot (Single Farmer Prediction)")
+            idx = st.number_input("Select Farmer Index (for SHAP Force Plot)", 0, len(X_sample)-1, 0, 1)
+            shap.initjs()
+            st_shap = shap.force_plot(explainer.expected_value[1], shap_values[1][idx, :], X_sample.iloc[idx, :], matplotlib=False)
+            st.components.v1.html(shap.getjs() + st_shap.html(), height=300)
+
+            # LIME
+            st.markdown("#### 🔹 LIME Explanation (Individual Prediction)")
+            lime_explainer = lime_tabular.LimeTabularExplainer(
+                training_data=np.array(X_sample),
+                feature_names=X_sample.columns.tolist(),
+                mode="classification"
+            )
+            farmer_index = st.number_input("Select Farmer Index for LIME", 0, len(X_sample)-1, 1, 1)
+            farmer_instance = X_sample.iloc[farmer_index]
+            explanation = lime_explainer.explain_instance(
+                data_row=farmer_instance,
+                predict_fn=model.predict_proba,
+                num_features=10
+            )
+            html = explanation.as_html()
+            st.components.v1.html(html, height=600, scrolling=True)
+    except Exception as e:
+        st.warning(f"Explainability section could not be generated: {e}")
+
+    # 📈 Risk Factor Distribution
     st.markdown("### 📈 Risk Factor Distribution")
     fig2 = px.histogram(data, x="Risk Factor", nbins=20, title="Distribution of Computed Risk Factors")
     st.plotly_chart(fig2, use_container_width=True)
-
 
 # =====================================================
 # TAB 4: PDF REPORT GENERATOR
@@ -262,11 +282,10 @@ with tab_report:
         pdf.cell(0, 10, txt="Institutional Loan Report", ln=True, align="C")
         pdf.ln(10)
         pdf.cell(0, 10, txt=f"Institution: {inst_name}", ln=True)
-        pdf.cell(0, 10, txt=f"Risk Sensitivity (alpha): {alpha}", ln=True)
+        pdf.cell(0, 10, txt=f"Risk Sensitivity (α): {alpha}", ln=True)
         pdf.cell(0, 10, txt=f"Interest Rate (I): {interest_rate}%", ln=True)
-        pdf.cell(0, 10, txt=f"Risk Factor (Rx): {risk_factor_calc}", ln=True)
+        pdf.cell(0, 10, txt=f"Risk Factor (Rₓ): {risk_factor_calc}", ln=True)
         pdf.cell(0, 10, txt=f"Loan Amount: KES {loan_amount:,.0f}", ln=True)
-        
         pdf.output("institutional_loan_report.pdf")
 
         with open("institutional_loan_report.pdf", "rb") as f:
