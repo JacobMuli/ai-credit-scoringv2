@@ -109,6 +109,85 @@ tab_assess, tab_portfolio, tab_dashboard, tab_report = st.tabs([
 ])
 
 # =====================================================
+# TAB 1: RISK & LOAN CALCULATOR
+# =====================================================
+with tab_assess:
+    st.subheader("🏦 Institutional Risk Factor & Loan Calculator — Farmer Inputs Included")
+
+    st.sidebar.header("Institution Parameters")
+    inst_name = st.sidebar.text_input("Institution Name (optional)")
+    logo_file = st.sidebar.file_uploader("Upload Institution Logo (optional)", type=["png", "jpg", "jpeg"])
+    alpha = st.sidebar.slider("Risk Sensitivity (α)", 0.1, 1.5, 0.9, 0.01)
+    interest_rate = st.sidebar.number_input("Annual Interest Rate (%)", 0.0, 100.0, 16.0, 0.1)
+
+    st.sidebar.header("Farmer Inputs")
+    aez = st.sidebar.selectbox("Agro-Ecological Zone Compatibility", ["High", "Moderate", "Low"])
+    pest = st.sidebar.selectbox("Pest & Disease Vulnerability", ["Low", "Moderate", "High"])
+    water = st.sidebar.selectbox("Water & Irrigation Reliability", ["High", "Moderate", "Low"])
+    storage = st.sidebar.selectbox("Post-Harvest Storage", ["Yes", "No"])
+    market = st.sidebar.selectbox("Market Access", ["Yes", "No"])
+    planting = st.sidebar.selectbox("Planting/Sowing Time", ["High", "Low"])
+    experience = st.sidebar.selectbox("Farmer Experience", [">9 years", "5-9 years", "1-4 years", "<1 year"])
+    coop = st.sidebar.selectbox("Cooperative Membership", ["Yes", "No"])
+    input_access = st.sidebar.selectbox("Input Access and Affordability", ["Yes", "No"])
+
+    st.sidebar.header("Economic Inputs")
+    price = st.sidebar.number_input("Expected Crop Price (KES/kg)", 1.0, 10000.0, 100.0, 0.1)
+    yield_output = st.sidebar.number_input("Expected Yield Output (Kgs)", 1, 1000000, 20000)
+
+    risk_factor_calc = compute_risk_from_row({
+        "Agro-Ecological Zone Compatibility": aez,
+        "Pest disease vulnerability": pest,
+        "Water irrigation reliability": water,
+        "Post Harvest Storage": storage,
+        "Market Access": market,
+        "Planting/Sowing Time": planting,
+        "Farmer experience": experience,
+        "Cooperative Membership": coop,
+        "Input Access and Affordability": input_access
+    })
+
+    projected_revenue = yield_output * price
+    I = interest_rate / 100
+    loan_amount = (projected_revenue * (1 * alpha * risk_factor_calc)) / (1 + I)
+    eligibility = "✅ Eligible for Financing" if risk_factor_calc <= 0.5 else "⚠️ High Risk - Review Required"
+
+    st.markdown("### 🧮 Computation Summary")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Risk Factor (Rₓ)", f"{risk_factor_calc:.3f}")
+    c2.metric("Projected Revenue (P)", f"KES {projected_revenue:,.0f}")
+    c3.metric("Risk Sensitivity (α)", f"{alpha}")
+    c4.metric("Interest Rate (I)", f"{interest_rate:.2f}%")
+
+    st.success(f"💰 **Recommended Principal Loan (L)** = KES {loan_amount:,.0f}")
+    st.info(f"Credit Eligibility: {eligibility}")
+
+# =====================================================
+# TAB 2: PORTFOLIO SIMULATION
+# =====================================================
+with tab_portfolio:
+    st.subheader("💰 Institutional Portfolio Simulation")
+
+    alpha_p = st.slider("Institution Risk Sensitivity (α)", 0.1, 1.5, 0.9, 0.01)
+    interest_rate_p = st.number_input("Interest Rate (%)", 0.0, 100.0, 16.0, 0.1)
+    I_p = interest_rate_p / 100
+
+    data["Loan Amount"] = (data["Projected Revenue"] * (1 * alpha_p * data["Risk Factor"])) / (1 + I_p)
+    data["Loan Amount"] = data["Loan Amount"].round(2)
+
+    crop_filter = st.selectbox("Filter by Crop Type", ["All"] + sorted(data["Crop Type"].unique().tolist()))
+    df_sim = data if crop_filter == "All" else data[data["Crop Type"] == crop_filter]
+
+    st.metric("Average Loan per Farmer", f"KES {df_sim['Loan Amount'].mean():,.0f}")
+    st.metric("Total Portfolio Loan", f"KES {df_sim['Loan Amount'].sum():,.0f}")
+
+    st.markdown("### 📊 Loan Distribution by Risk Factor")
+    fig = px.scatter(df_sim, x="Risk Factor", y="Loan Amount", color="Crop Type", size="Loan Amount", title="Loan Amount vs Risk Factor")
+    st.plotly_chart(fig, width='stretch')
+
+    st.download_button("💾 Download Portfolio Data", df_sim.to_csv(index=False).encode("utf-8"), "portfolio_simulation.csv", "text/csv")
+
+# =====================================================
 # TAB 3: MODEL DASHBOARD — FIXED SHAP IMPLEMENTATION
 # =====================================================
 with tab_dashboard:
