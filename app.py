@@ -201,19 +201,48 @@ with tab_dashboard:
     else:
         st.info("No numerical columns available for correlation heatmap.")
 
-    # Feature importance (from model)
+    # -----------------------------------------------------
+    # 🌾 Feature Importance (works with Pipeline models)
+    # -----------------------------------------------------
     st.markdown("### 🌾 Feature Importance (Model Explainability)")
+    
     try:
-        importances = model.feature_importances_
-        feature_names = getattr(model, 'feature_names_in_', data.select_dtypes(include=[np.number]).columns)
-        importance_df = pd.DataFrame({
-            "Feature": feature_names,
-            "Importance": importances
-        }).sort_values(by="Importance", ascending=False)
-        fig = px.bar(importance_df, x="Importance", y="Feature", orientation='h', title="Feature Importance Ranking")
-        st.plotly_chart(fig, use_container_width=True)
+        # If model is a pipeline, extract the final estimator
+        if hasattr(model, "named_steps"):
+            final_estimator = list(model.named_steps.values())[-1]
+        elif hasattr(model, "steps"):
+            final_estimator = model.steps[-1][1]
+        else:
+            final_estimator = model
+    
+        # Ensure final estimator supports feature_importances_
+        if hasattr(final_estimator, "feature_importances_"):
+            importances = final_estimator.feature_importances_
+            # Try to infer feature names
+            if hasattr(model, "feature_names_in_"):
+                feature_names = model.feature_names_in_
+            elif "Feature" in data.columns:
+                feature_names = data.columns
+            else:
+                feature_names = [f"Feature {i+1}" for i in range(len(importances))]
+    
+            # Build DataFrame for importance chart
+            importance_df = pd.DataFrame({
+                "Feature": feature_names,
+                "Importance": importances
+            }).sort_values(by="Importance", ascending=False)
+    
+            # Bar plot
+            fig = px.bar(importance_df, x="Importance", y="Feature",
+                         orientation="h", title="Feature Importance Ranking")
+            st.plotly_chart(fig, use_container_width=True)
+    
+        else:
+            st.info("This model does not expose feature_importances_. Try using permutation or SHAP explainability instead.")
+    
     except Exception as e:
-        st.warning(f"Feature importance unavailable: {e}")
+        st.warning(f"Feature importance extraction failed: {e}")
+
 
     # Visualization: Risk Factor distribution
     st.markdown("### 📈 Risk Factor Distribution")
